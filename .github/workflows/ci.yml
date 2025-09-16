@@ -28,16 +28,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Login to registry
+
+      - name: Login to ACR
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.REGISTRY_URL }}
-          username: ${{ secrets.REGISTRY_USER }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          registry: ${{ secrets.REGISTRY_URL }}      # ex: sabrikaciacr.azurecr.io
+          username: ${{ secrets.REGISTRY_USER }}     # admin ACR ou appId SP
+          password: ${{ secrets.REGISTRY_PASSWORD }} # password admin ou secret SP
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: infra/Dockerfile
           push: true
-          tags: ${{ secrets.REGISTRY_URL }}/rag-chatbot:${{ github.sha }}
+          tags: |
+            ${{ secrets.REGISTRY_URL }}/rag-chatbot:${{ github.sha }}
+            ${{ secrets.REGISTRY_URL }}/rag-chatbot:latest
