@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "rag-newsletter"
+version = "0.1.0"
+description = ""
+authors = ["Votre Nom <vous@example.com>"]
+readme = "README.md"
+
+# Déclaration explicite du package sous src/
+[[tool.poetry.packages]]
+include = "rag_newsletter"
+from = "src"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+msal = "^1.33.0"
+requests = "^2.32.5"
+pydantic-settings = "^2.10.1"
+python-dotenv = "^1.1.1"
+
+[tool.poetry.scripts]
+rag-newsletter = "rag_newsletter.__main__:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
