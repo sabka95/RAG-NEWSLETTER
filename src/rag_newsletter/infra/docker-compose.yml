@@ -1,0 +1,23 @@
+# infra/docker-compose.yml
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "8501:8501"   # si Streamlit plus tard
+    depends_on:
+      - qdrant
+    command: ["python", "-m", "app.main"]  # placeholder
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+volumes:
+  qdrant_storage:
