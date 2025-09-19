@@ -20,9 +20,15 @@ def test_basic_imports():
             sys.path.insert(0, src_path)
 
         # Try to import the modules
-        from rag_newsletter.embeddings.embedding_service import MLXEmbeddingService  # noqa: F401
-        from rag_newsletter.embeddings.vector_store import OptimizedVectorStoreService  # noqa: F401
-        from rag_newsletter.ingestion.rag_ingestion import OptimizedRAGIngestionService  # noqa: F401
+        from rag_newsletter.embeddings.embedding_service import (
+            MLXEmbeddingService,
+        )  # noqa: F401
+        from rag_newsletter.embeddings.vector_store import (
+            OptimizedVectorStoreService,
+        )  # noqa: F401
+        from rag_newsletter.ingestion.rag_ingestion import (
+            OptimizedRAGIngestionService,
+        )  # noqa: F401
         from rag_newsletter.processing.document_processor import (  # noqa: F401
             OptimizedDocumentProcessor,
         )
