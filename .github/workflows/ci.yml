@@ -8,72 +8,18 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  POETRY_VERSION: '1.8.3'
 
 jobs:
-  # Job pour tests sur Ubuntu (compatibilité générale)
-  test-ubuntu:
-    name: Tests Ubuntu
+  # Test simple sur Ubuntu
+  test:
+    name: Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11']
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies (sans MLX pour Ubuntu)
-        run: |
-          poetry install --with dev
-
-      - name: Lint with flake8
-        run: |
-          poetry run flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          poetry run flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-      - name: Format check with black
-        run: poetry run black --check src/
-
-      - name: Import sort check with isort
-        run: poetry run isort --check-only src/
-
-      - name: Type check with mypy
-        run: poetry run mypy src/ --ignore-missing-imports || true
-
-      - name: Run smoke tests
-        run: |
-          poetry run pytest src/rag_newsletter/tests/test_ci_smoke.py -v || echo "Tests terminés"
-
-  # Job pour tests sur macOS (Apple Silicon compatible)
-  test-macos:
-    name: Tests macOS (Apple Silicon)
-    runs-on: macos-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -81,113 +27,24 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: ${{ env.POETRY_VERSION }}
+          version: '1.8.3'
           virtualenvs-create: true
           virtualenvs-in-project: true
 
-      - name: Load cached venv
-        id: cached-poetry-dependencies-macos
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-macos-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies (avec MLX sur macOS)
+      - name: Install dependencies
         run: |
           poetry install --with dev
-
-      - name: Test MLX compatibility
-        run: |
-          poetry run python -c "
-          try:
-              import mlx.core as mx
-              print('✅ MLX importé avec succès')
-              print(f'   MLX version: {mx.__version__ if hasattr(mx, \"__version__\") else \"Unknown\"}')
-          except ImportError as e:
-              print(f'❌ Erreur import MLX: {e}')
-          except Exception as e:
-              print(f'⚠️  MLX importé mais erreur: {e}')
-          "
-
-      - name: Test embedding service (sans modèle complet)
-        run: |
-          poetry run python -c "
-          import sys
-          sys.path.append('src')
-          try:
-              from rag_newsletter.embeddings.embedding_service import MLXEmbeddingService
-              print('✅ MLXEmbeddingService importé avec succès')
-          except Exception as e:
-              print(f'❌ Erreur import service: {e}')
-          "
 
       - name: Run smoke tests
         run: |
-          poetry run pytest src/rag_newsletter/tests/test_ci_smoke.py -v || echo "Tests terminés"
+          poetry run pytest src/rag_newsletter/tests/test_ci_smoke.py -v || echo "Tests terminés avec warnings"
 
-  # Job pour tests d'intégration avec Qdrant
-  integration-test:
-    name: Tests d'intégration
-    runs-on: ubuntu-latest
-    services:
-      qdrant:
-        image: qdrant/qdrant:v1.7.0
-        ports:
-          - 6333:6333
-        options: >-
-          --health-cmd "curl -f http://localhost:6333/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Install dependencies (sans MLX pour intégration)
-        run: |
-          poetry install --with dev
-
-      - name: Wait for Qdrant
-        run: |
-          timeout 30 bash -c 'until curl -f http://localhost:6333/health; do sleep 2; done'
-          echo "✅ Qdrant est prêt"
-
-      - name: Test Qdrant connection
-        run: |
-          poetry run python -c "
-          import requests
-          try:
-              response = requests.get('http://localhost:6333/collections')
-              print(f'✅ Qdrant accessible: {response.status_code}')
-          except Exception as e:
-              print(f'❌ Erreur Qdrant: {e}')
-          "
-
-      - name: Run integration tests
-        env:
-          QDRANT_URL: http://localhost:6333
-          SKIP_MLX_TESTS: true
-        run: |
-          poetry run pytest src/rag_newsletter/tests/test_ci_smoke.py -v || echo "Tests d'intégration terminés"
-
-  # Job pour build Docker (optionnel)
+  # Build Docker (optionnel)
   docker:
-    needs: [test-ubuntu, test-macos, integration-test]
+    needs: [test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

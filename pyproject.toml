@@ -18,10 +18,13 @@ requests = "^2.32.5"
 pydantic-settings = "^2.10.1"
 python-dotenv = "^1.1.1"
 
-        # MLX and ML Framework (optimized for Apple Silicon)
-        mlx = "^0.19.0"
-        mlx-lm = "^0.19.0"
-        accelerate = "^0.30.0"
+# MLX and ML Framework (optimized for Apple Silicon)
+mlx = "^0.19.0"
+mlx-lm = "^0.19.0"
+torch = "^2.5.0"
+torchvision = "^0.20.0"
+transformers = "^4.47.0"
+accelerate = "^0.30.0"
 
 # Document Processing
 pymupdf = "^1.23.0"
@@ -34,36 +37,22 @@ numpy = "^1.24.0"
 scikit-learn = "^1.3.0"
 
 # RAG Framework
-    langchain = "^0.1.0"
-    langchain-community = "^0.0.20"
-
-[tool.poetry.group.dev.dependencies]
-    pytest = "^8.0.0"
-    pytest-asyncio = "^0.23.0"
-    pytest-cov = "^4.0.0"
-    black = "^24.0.0"
-    isort = "^5.13.0"
-    flake8 = "^7.0.0"
-    mypy = "^1.8.0"
+langchain = "^0.1.0"
+langchain-community = "^0.0.20"
 
 # Utilities
 typing-extensions = "^4.8.0"
 tqdm = "^4.66.0"
-loguru = "^0.7.0"
-
-# Optional: For advanced features
-# streamlit = "^1.28.0"  # Uncomment when implementing UI
-# redis = "^5.0.0"       # Uncomment when implementing caching
-torch = "2.5.0"
-torchvision = "0.20.0"
-transformers = "4.47.0"
+loguru = "^0.7.2"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
-pytest-asyncio = "^0.21.0"
-black = "^23.0.0"
-isort = "^5.12.0"
-flake8 = "^6.0.0"
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^4.0.0"
+black = "^24.0.0"
+isort = "^5.13.0"
+flake8 = "^7.0.0"
+mypy = "^1.8.0"
 
 [tool.poetry.scripts]
 rag-newsletter = "rag_newsletter.__main__:main"
