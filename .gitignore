@@ -1,4 +1,121 @@
+# Environment variables
 .env
 *.env
+.env.local
+.env.production
+.env.staging
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env/
+
+# Poetry
+poetry.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
 .DS_Store
-app/.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs
+*.log
+logs/
+log/
+
+# RAG Newsletter specific
+# Documents téléchargés (contiennent des données sensibles)
+downloads/
+documents/
+pdfs/
+*.pdf
+
+# Cache des modèles ML
+.cache/
+huggingface_cache/
+models/
+checkpoints/
+
+# Qdrant data
+qdrant_data/
+qdrant_storage/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Test outputs
+test_outputs/
+test_results/
+
+# Coverage reports
+.coverage
+htmlcov/
+.pytest_cache/
+
+# MLX specific
+.mlx_cache/
+
+# Docker
+.dockerignore
+
+# Secrets et configurations sensibles
+secrets/
+config/
+*.key
+*.pem
+*.p12
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Large files that shouldn't be in git
+*.zip
+*.tar.gz
+*.rar

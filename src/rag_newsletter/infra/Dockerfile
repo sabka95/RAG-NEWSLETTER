@@ -1,9 +1,9 @@
-# Dockerfile optimisé pour Apple Silicon avec MLX
+# Dockerfile optimisé pour Apple Silicon M4 avec MLX
 FROM python:3.11-slim
 
 # Métadonnées
 LABEL maintainer="RAG Newsletter Team"
-LABEL description="RAG Newsletter with MLX optimizations for Apple Silicon"
+LABEL description="RAG Newsletter avec MLX et MCDSE-2B optimisé pour Apple Silicon"
 
 # Variables d'environnement
 ENV PYTHONUNBUFFERED=1
@@ -16,61 +16,45 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
-    libffi-dev \
-    libssl-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgfortran5 \
     && rm -rf /var/lib/apt/lists/*
-
-# Création du répertoire de travail
-WORKDIR /app
-
-# Copie des fichiers de dépendances
-COPY pyproject.toml poetry.lock ./
 
 # Installation de Poetry
 RUN pip install poetry==1.7.1
 
 # Configuration de Poetry
-RUN poetry config virtualenvs.create false
+ENV POETRY_NO_INTERACTION=1
+ENV POETRY_VENV_IN_PROJECT=1
+ENV POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# Création du répertoire de travail
+WORKDIR /app
+
+# Copie des fichiers de configuration
+COPY pyproject.toml poetry.lock* ./
 
 # Installation des dépendances Python
-RUN poetry install --no-dev --no-interaction --no-ansi
-
-# Installation spécifique de MLX pour Linux (fallback)
-# Note: MLX est optimisé pour macOS, mais on peut installer une version compatible
-RUN pip install --no-cache-dir \
-    torch \
-    transformers \
-    accelerate \
-    sentence-transformers
+RUN poetry install --no-dev && rm -rf $POETRY_CACHE_DIR
 
 # Copie du code source
 COPY src/ ./src/
 COPY downloads/ ./downloads/
-COPY examples/ ./examples/
 
-# Création des répertoires nécessaires
-RUN mkdir -p /app/models /app/logs /app/cache
-
-# Configuration des permissions
-RUN chmod +x src/rag_newsletter/__main__.py
-
-# Variables d'environnement pour les optimisations
-ENV MLX_ENABLED=false  # Désactivé par défaut dans Docker (optimisé pour macOS)
-ENV HNSW_ENABLED=true
-ENV BINARY_QUANTIZATION=true
-ENV MMR_LAMBDA=0.7
-ENV MODEL_CACHE_DIR=/app/models
-ENV LOG_LEVEL=INFO
+# Création du répertoire pour les logs
+RUN mkdir -p /app/logs
 
 # Exposition des ports
-EXPOSE 8501 8000
+EXPOSE 8501 6333
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8501/health || exit 1
-
-# Point d'entrée
-ENTRYPOINT ["python", "-m", "rag_newsletter"]
+# Variables d'environnement pour MLX
+ENV MLX_ENABLE_GPU=1
+ENV MLX_DEVICE=mps
 
 # Commande par défaut
-CMD ["--help"]
+CMD ["poetry", "run", "python", "-m", "rag_newsletter", "--help"]

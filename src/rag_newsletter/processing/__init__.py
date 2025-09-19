@@ -1,3 +1,3 @@
-from .document_processor import DocumentProcessor
+from .document_processor import OptimizedDocumentProcessor, DocumentProcessor
 
-__all__ = ["DocumentProcessor"]
+__all__ = ["OptimizedDocumentProcessor", "DocumentProcessor"]

@@ -1,118 +1,97 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from langchain.schema import Document
 import logging
 import math
-import numpy as np
-from PIL import Image
 import io
 import mlx.core as mx
 import mlx.nn as nn
 from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
+from PIL import Image
 import torch
+from loguru import logger
 
-logger = logging.getLogger(__name__)
-
-class EmbeddingService:
-    def __init__(self, 
-                 model_name: str = "marco/mcdse-2b-v1",
-                 dimension: int = 1024,
-                 use_mlx: bool = True,
-                 binary_quantization: bool = True):
+class MLXEmbeddingService:
+    def __init__(self, model_name: str = "marco/mcdse-2b-v1", dimension: int = 1536):
         """
-        Service d'embeddings utilisant le modèle MCDSE avec MLX pour Apple Silicon
+        Service d'embeddings utilisant MLX avec le modèle MCDSE-2B-V1
         
         Args:
             model_name: Nom du modèle HuggingFace à utiliser
             dimension: Dimension des embeddings de sortie
-            use_mlx: Utiliser MLX pour l'optimisation Apple Silicon
-            binary_quantization: Activer la binary quantization
         """
         self.model_name = model_name
         self.dimension = dimension
-        self.use_mlx = use_mlx
-        self.binary_quantization = binary_quantization
-        
-        # Configuration des prompts
-        self.document_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>What is shown in this image?<|im_end|>\n<|endoftext|>"
-        self.query_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Query: %s<|im_end|>\n<|endoftext|>"
-        
-        # Configuration des pixels
-        self.min_pixels = 1 * 28 * 28
-        self.max_pixels = 960 * 28 * 28
-        
         self.model = None
         self.processor = None
         self._initialize_model()
+        
+        # Prompts pour l'encodage
+        self.document_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>What is shown in this image?<|im_end|>\n<|endoftext|>"
+        self.query_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Query: %s<|im_end|>\n<|endoftext|>"
     
     def _initialize_model(self):
         """Initialise le modèle MCDSE avec MLX"""
         try:
-            logger.info(f"🚀 Chargement du modèle MCDSE: {self.model_name}")
-            logger.info("🍎 Optimisation Apple Silicon avec MLX")
+            logger.info(f"Chargement du modèle MCDSE: {self.model_name}")
+            logger.info("⏳ Configuration pour Apple Silicon M4...")
             
-            if self.use_mlx:
-                logger.info("📥 Chargement avec MLX...")
-                # Pour MLX, on utilise d'abord le modèle standard puis on le convertit
-                self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-                    self.model_name,
-                    attn_implementation="flash_attention_2",
-                    torch_dtype=torch.bfloat16,
-                    device_map="cpu"  # On charge sur CPU puis on optimise avec MLX
-                ).eval()
-            else:
-                logger.info("📥 Chargement standard...")
-                self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-                    self.model_name,
-                    attn_implementation="flash_attention_2",
-                    torch_dtype=torch.bfloat16,
-                    device_map="auto"
-                ).eval()
+            # Configuration pour Apple Silicon
+            min_pixels = 1 * 28 * 28
+            max_pixels = 960 * 28 * 28
             
+            # Charger le processeur
             logger.info("📥 Chargement du processeur...")
             self.processor = AutoProcessor.from_pretrained(
                 self.model_name,
-                min_pixels=self.min_pixels,
-                max_pixels=self.max_pixels
+                min_pixels=min_pixels,
+                max_pixels=max_pixels
             )
+            
+            # Charger le modèle avec optimisations Apple Silicon
+            logger.info("📥 Chargement du modèle principal...")
+            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.bfloat16,
+                low_cpu_mem_usage=True
+            ).eval()
+            
+            # Déplacer le modèle sur MPS après chargement
+            if torch.backends.mps.is_available():
+                logger.info("🍎 Déplacement du modèle vers Apple Silicon MPS...")
+                self.model = self.model.to('mps')
             
             # Configuration du padding
             self.model.padding_side = "left"
             self.processor.tokenizer.padding_side = "left"
             
-            logger.info("✅ Modèle MCDSE chargé avec succès!")
-            logger.info(f"📊 Dimension des embeddings: {self.dimension}")
-            logger.info(f"🍎 MLX activé: {self.use_mlx}")
-            logger.info(f"🔢 Binary quantization: {self.binary_quantization}")
+            logger.info("✅ Modèle MCDSE chargé avec succès sur Apple Silicon!")
             
         except Exception as e:
             logger.error(f"❌ Erreur lors du chargement du modèle: {e}")
             raise
     
-    def _round_by_factor(self, number: float, factor: int) -> int:
-        """Arrondit un nombre par un facteur"""
-        return round(number / factor) * factor
-    
-    def _ceil_by_factor(self, number: float, factor: int) -> int:
-        """Arrondit vers le haut par un facteur"""
-        return math.ceil(number / factor) * factor
-    
-    def _floor_by_factor(self, number: float, factor: int) -> int:
-        """Arrondit vers le bas par un facteur"""
-        return math.floor(number / factor) * factor
-    
-    def _smart_resize(self, height: int, width: int) -> tuple[int, int]:
+    def _smart_resize(self, height: int, width: int, max_pixels: int = 960 * 28 * 28, min_pixels: int = 1 * 28 * 28) -> tuple[int, int]:
         """Redimensionne intelligemment une image selon les contraintes du modèle"""
-        h_bar = max(28, self._round_by_factor(height, 28))
-        w_bar = max(28, self._round_by_factor(width, 28))
+        def round_by_factor(number: float, factor: int) -> int:
+            return round(number / factor) * factor
         
-        if h_bar * w_bar > self.max_pixels:
-            beta = math.sqrt((height * width) / self.max_pixels)
-            h_bar = self._floor_by_factor(height / beta, 28)
-            w_bar = self._floor_by_factor(width / beta, 28)
-        elif h_bar * w_bar < self.min_pixels:
-            beta = math.sqrt(self.min_pixels / (height * width))
-            h_bar = self._ceil_by_factor(height * beta, 28)
-            w_bar = self._ceil_by_factor(width * beta, 28)
+        def ceil_by_factor(number: float, factor: int) -> int:
+            return math.ceil(number / factor) * factor
+        
+        def floor_by_factor(number: float, factor: int) -> int:
+            return math.floor(number / factor) * factor
+        
+        h_bar = max(28, round_by_factor(height, 28))
+        w_bar = max(28, round_by_factor(width, 28))
+        
+        if h_bar * w_bar > max_pixels:
+            beta = math.sqrt((height * width) / max_pixels)
+            h_bar = floor_by_factor(height / beta, 28)
+            w_bar = floor_by_factor(width / beta, 28)
+        elif h_bar * w_bar < min_pixels:
+            beta = math.sqrt(min_pixels / (height * width))
+            h_bar = ceil_by_factor(height * beta, 28)
+            w_bar = ceil_by_factor(width * beta, 28)
         
         return h_bar, w_bar
     
@@ -121,19 +100,9 @@ class EmbeddingService:
         new_size = self._smart_resize(image.height, image.width)
         return image.resize(new_size)
     
-    def _apply_binary_quantization(self, embeddings: np.ndarray) -> np.ndarray:
-        """Applique la binary quantization aux embeddings"""
-        if not self.binary_quantization:
-            return embeddings
-        
-        # Binary quantization: convertir en -1 ou +1
-        quantized = np.where(embeddings > 0, 1.0, -1.0).astype(np.float32)
-        
-        # Normaliser pour maintenir la magnitude
-        magnitude = np.linalg.norm(embeddings, axis=-1, keepdims=True)
-        quantized = quantized * (magnitude / np.sqrt(self.dimension))
-        
-        return quantized
+    def _optimize_image(self, image: Image.Image) -> Image.Image:
+        """Optimise une image pour l'embedding (alias pour _resize_image)"""
+        return self._resize_image(image)
     
     def embed_documents(self, documents: List[Document]) -> List[List[float]]:
         """
@@ -148,76 +117,98 @@ class EmbeddingService:
         if not self.model or not self.processor:
             raise RuntimeError("Modèle MCDSE non initialisé")
         
-        logger.info(f"🖼️  Génération des embeddings pour {len(documents)} documents")
+        embeddings = []
         
-        # Extraire les images des documents
-        images = []
-        valid_docs = []
+        logger.info(f"🖼️  Génération des embeddings pour {len(documents)} documents...")
         
-        for doc in documents:
+        for i, doc in enumerate(documents):
             try:
+                # Récupérer les données de l'image depuis les métadonnées
                 image_data = doc.metadata.get('image_data')
                 if not image_data:
                     logger.warning(f"Pas de données d'image pour le document {doc.metadata.get('source_file')}")
                     continue
                 
                 # Convertir les données en image PIL
-                image = Image.open(io.BytesIO(image_data))
-                images.append(image)
-                valid_docs.append(doc)
+                try:
+                    if isinstance(image_data, bytes):
+                        image = Image.open(io.BytesIO(image_data))
+                    else:
+                        image = Image.open(image_data)
+                    
+                    # Vérifier que l'image est valide
+                    if image.size[0] == 0 or image.size[1] == 0:
+                        logger.warning(f"Image invalide pour le document {doc.metadata.get('source_file')}")
+                        continue
+                        
+                except Exception as img_error:
+                    logger.warning(f"Erreur lors du traitement de l'image pour {doc.metadata.get('source_file')}: {img_error}")
+                    continue
+                
+                # Générer l'embedding pour l'image
+                embedding = self._encode_document(image)
+                embeddings.append(embedding)
+                
+                if (i + 1) % 10 == 0:
+                    logger.info(f"📊 Progression: {i + 1}/{len(documents)} documents traités")
                 
             except Exception as e:
-                logger.error(f"Erreur lors du traitement de l'image: {e}")
+                logger.error(f"Erreur lors de l'embedding du document {i}: {e}")
                 continue
         
-        if not images:
-            logger.warning("Aucune image valide trouvée")
-            return []
+        logger.info(f"✅ Embeddings générés avec succès: {len(embeddings)} vecteurs")
+        return embeddings
+    
+    def _encode_document(self, image: Image.Image) -> List[float]:
+        """
+        Encode un document (image) en embedding
         
+        Args:
+            image: Image PIL du document
+            
+        Returns:
+            Vecteur d'embedding normalisé
+        """
         try:
             # Préparer les inputs pour le modèle
             inputs = self.processor(
-                text=[self.document_prompt] * len(images),
-                images=[self._resize_image(img) for img in images],
+                text=[self.document_prompt],
+                images=[self._resize_image(image)],
                 videos=None,
                 padding='longest',
                 return_tensors='pt'
             )
             
+            # Déplacer sur MPS (Metal Performance Shaders) pour Apple Silicon
+            if torch.backends.mps.is_available():
+                inputs = {k: v.to('mps') for k, v in inputs.items()}
+            
             # Préparer les inputs pour la génération
-            cache_position = torch.arange(0, len(images))
+            cache_position = torch.arange(0, 1)
             inputs = self.model.prepare_inputs_for_generation(
                 **inputs, cache_position=cache_position, use_cache=False
             )
             
-            # Générer les embeddings
+            # Générer l'embedding
             with torch.no_grad():
-                outputs = self.model(
+                output = self.model(
                     **inputs,
                     return_dict=True,
                     output_hidden_states=True
                 )
                 
-                # Extraire les embeddings de la dernière couche cachée
-                embeddings = outputs.hidden_states[-1][:, -1]
+                # Extraire l'embedding du dernier état caché
+                embeddings = output.hidden_states[-1][:, -1]
                 
                 # Normaliser et tronquer à la dimension souhaitée
-                embeddings = torch.nn.functional.normalize(
+                normalized_embedding = torch.nn.functional.normalize(
                     embeddings[:, :self.dimension], p=2, dim=-1
                 )
                 
-                # Convertir en numpy
-                embeddings_np = embeddings.cpu().numpy()
-                
-                # Appliquer la binary quantization si activée
-                if self.binary_quantization:
-                    embeddings_np = self._apply_binary_quantization(embeddings_np)
-                
-                logger.info(f"✅ Embeddings générés: {embeddings_np.shape}")
-                return embeddings_np.tolist()
+                return normalized_embedding.cpu().squeeze().tolist()
                 
         except Exception as e:
-            logger.error(f"Erreur lors de la génération des embeddings: {e}")
+            logger.error(f"Erreur lors de l'encodage du document: {e}")
             raise
     
     def embed_query(self, query: str) -> List[float]:
@@ -228,15 +219,12 @@ class EmbeddingService:
             query: Texte de la requête
             
         Returns:
-            Vecteur d'embedding
+            Vecteur d'embedding normalisé
         """
-        if not self.model or not self.processor:
-            raise RuntimeError("Modèle MCDSE non initialisé")
-        
         try:
             logger.info(f"🔍 Génération d'embedding pour la requête: {query[:50]}...")
             
-            # Créer une image dummy pour les requêtes textuelles
+            # Créer une image factice pour les requêtes textuelles
             dummy_image = Image.new('RGB', (56, 56))
             
             # Préparer les inputs
@@ -248,6 +236,10 @@ class EmbeddingService:
                 return_tensors='pt'
             )
             
+            # Déplacer sur MPS si disponible
+            if torch.backends.mps.is_available():
+                inputs = {k: v.to('mps') for k, v in inputs.items()}
+            
             # Préparer pour la génération
             cache_position = torch.arange(0, 1)
             inputs = self.model.prepare_inputs_for_generation(
@@ -256,30 +248,80 @@ class EmbeddingService:
             
             # Générer l'embedding
             with torch.no_grad():
-                outputs = self.model(
+                output = self.model(
                     **inputs,
                     return_dict=True,
                     output_hidden_states=True
                 )
                 
-                # Extraire l'embedding
-                embedding = outputs.hidden_states[-1][:, -1]
-                
-                # Normaliser et tronquer
-                embedding = torch.nn.functional.normalize(
-                    embedding[:, :self.dimension], p=2, dim=-1
+                # Extraire et normaliser l'embedding
+                embeddings = output.hidden_states[-1][:, -1]
+                normalized_embedding = torch.nn.functional.normalize(
+                    embeddings[:, :self.dimension], p=2, dim=-1
                 )
                 
-                # Convertir en numpy
-                embedding_np = embedding.cpu().numpy()
-                
-                # Appliquer la binary quantization si activée
-                if self.binary_quantization:
-                    embedding_np = self._apply_binary_quantization(embedding_np)
-                
-                return embedding_np[0].tolist()
+                return normalized_embedding.cpu().squeeze().tolist()
                 
         except Exception as e:
             logger.error(f"Erreur lors de la génération de l'embedding de requête: {e}")
             # Fallback : retourner un vecteur zéro
             return [0.0] * self.dimension
+    
+    def embed_queries_batch(self, queries: List[str]) -> List[List[float]]:
+        """
+        Génère les embeddings pour plusieurs requêtes en batch
+        
+        Args:
+            queries: Liste des requêtes textuelles
+            
+        Returns:
+            Liste des vecteurs d'embedding
+        """
+        try:
+            logger.info(f"🔍 Génération d'embeddings batch pour {len(queries)} requêtes...")
+            
+            # Créer des images factices pour toutes les requêtes
+            dummy_images = [Image.new('RGB', (56, 56)) for _ in queries]
+            
+            # Préparer les inputs en batch
+            inputs = self.processor(
+                text=[self.query_prompt % q for q in queries],
+                images=dummy_images,
+                videos=None,
+                padding='longest',
+                return_tensors='pt'
+            )
+            
+            # Déplacer sur MPS si disponible
+            if torch.backends.mps.is_available():
+                inputs = {k: v.to('mps') for k, v in inputs.items()}
+            
+            # Préparer pour la génération
+            cache_position = torch.arange(0, inputs['input_ids'].shape[0])
+            inputs = self.model.prepare_inputs_for_generation(
+                **inputs, cache_position=cache_position, use_cache=False
+            )
+            
+            # Générer les embeddings en batch
+            with torch.no_grad():
+                output = self.model(
+                    **inputs,
+                    return_dict=True,
+                    output_hidden_states=True
+                )
+                
+                # Extraire et normaliser les embeddings
+                embeddings = output.hidden_states[-1][:, -1]
+                normalized_embeddings = torch.nn.functional.normalize(
+                    embeddings[:, :self.dimension], p=2, dim=-1
+                )
+                
+                return normalized_embeddings.cpu().tolist()
+                
+        except Exception as e:
+            logger.error(f"Erreur lors de la génération des embeddings batch: {e}")
+            # Fallback : retourner des vecteurs zéro
+            return [[0.0] * self.dimension for _ in queries]
+
+# Alias pour la compatibilité
+EmbeddingService = MLXEmbeddingService

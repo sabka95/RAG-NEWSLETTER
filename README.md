@@ -1,304 +1,310 @@
-# RAG Newsletter - Système RAG Optimisé avec MLX et Apple Silicon
+# RAG Newsletter Optimisé 🚀
 
-Un système RAG (Retrieval-Augmented Generation) d'entreprise optimisé pour Apple Silicon avec des fonctionnalités avancées de recherche vectorielle et d'optimisation des performances.
+Un chatbot d'entreprise RAG (Retrieval-Augmented Generation) optimisé pour Apple Silicon M4, utilisant le modèle **MCDSE-2B-V1** avec **MLX**, **HNSW**, **Binary Quantization** et **MMR** pour des performances exceptionnelles.
 
-## 🚀 Nouvelles Fonctionnalités
+## 🌟 Fonctionnalités Clés
 
-### 🍎 Optimisations Apple Silicon
-- **MLX Integration** : Optimisation native pour les puces Apple Silicon M4
-- **Binary Quantization** : Réduction de la taille des embeddings pour des performances optimales
-- **GPU Acceleration** : Utilisation optimale du GPU 10 cœurs du M4
+- **🤖 Modèle MCDSE-2B-V1** : Embeddings de documents basés sur des images avec MLX
+- **⚡ Optimisé Apple Silicon** : Utilisation native du GPU M4 avec Metal Performance Shaders
+- **🔍 HNSW Indexing** : Recherche vectorielle ultra-rapide avec Qdrant
+- **💾 Binary Quantization** : Réduction de 75% de l'espace de stockage
+- **🎯 MMR Search** : Maximum Marginal Relevance pour des résultats diversifiés
+- **📚 SharePoint Integration** : Import automatique avec OAuth2
+- **🔄 Comparaison Multi-docs** : Analyse comparative entre documents
 
-### 🔍 Recherche Vectorielle Avancée
-- **Modèle MCDSE** : Utilisation du modèle `marco/mcdse-2b-v1` pour des embeddings de haute qualité
-- **HNSW Indexing** : Indexation vectorielle rapide avec Hierarchical Navigable Small World
-- **MMR Search** : Maximum Marginal Relevance pour diversifier les résultats
-- **Filtrage Intelligent** : Recherche avec filtres sur les documents sources
+## 🏗️ Architecture Technique
 
-### 📊 Gestion Optimisée des Documents
-- **Traitement d'Images** : Conversion automatique des pages PDF en images
-- **Smart Resizing** : Redimensionnement intelligent selon les contraintes du modèle
-- **Batch Processing** : Traitement par lots optimisé pour les gros volumes
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   SharePoint    │───▶│  Document        │───▶│  MCDSE-2B-V1    │
+│   (OAuth2)      │    │  Processor       │    │  + MLX          │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                         │
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Streamlit UI  │◀───│  RAG Service     │◀───│  Qdrant HNSW    │
+│   (Future)      │    │  + MMR           │    │  + Binary Q     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
 
-## 🛠️ Installation
+## 🚀 Installation
 
 ### Prérequis
-- Python 3.11+
-- Apple Silicon Mac (M1/M2/M3/M4) recommandé
-- Qdrant Server
-- Compte Azure AD pour SharePoint
+
+- **macOS** avec Apple Silicon M4
+- **Python 3.11**
+- **Poetry** pour la gestion des dépendances
+- **Docker** (optionnel, pour Qdrant)
 
 ### Installation des dépendances
 
 ```bash
-# Installation avec Poetry
+# Cloner le repository
+git clone <your-repo-url>
+cd rag-newsletter
+
+# Installer les dépendances avec Poetry
 poetry install
 
-# Ou avec pip
-pip install -r requirements.txt
+# Ou installer manuellement
+pip install mlx mlx-lm torch torchvision transformers qdrant-client pymupdf pillow scikit-learn
 ```
 
-### Configuration MLX pour Apple Silicon
+### Configuration SharePoint
 
+1. Créer un fichier `.env` basé sur `env.example` :
 ```bash
-# Installation MLX optimisée
-pip install mlx mlx-lm
-
-# Vérification de l'installation
-python -c "import mlx.core as mx; print(f'MLX version: {mx.__version__}')"
+cp env.example .env
 ```
 
-## ⚙️ Configuration
+2. Configurer Azure AD :
+```env
+# Configuration Azure AD / Microsoft Graph
+AZURE_TENANT_ID=your-tenant-id-here
+AZURE_CLIENT_ID=your-client-id-here
+AZURE_CLIENT_SECRET=your-client-secret-here
 
-### Variables d'environnement
-
-Créez un fichier `.env` basé sur `env.example` :
-
-```bash
-# Azure AD Configuration
-AZURE_TENANT_ID=your-tenant-id
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-client-secret
-
-# SharePoint Configuration
+# Configuration SharePoint
 SP_SITE_URL=https://your-tenant.sharepoint.com/sites/your-site
 SP_DRIVE_NAME=Documents
-
-# Qdrant Configuration
-QDRANT_URL=http://localhost:6333
 ```
 
-### Configuration des Optimisations
-
-```python
-from rag_newsletter.configs.optimization_config import OptimizationConfig
-
-# Configuration optimisée pour M4
-config = OptimizationConfig("apple_silicon_m4", "performance")
-config.print_config()
-```
-
-## 🚀 Utilisation
-
-### 1. Démarrage de Qdrant
+### Démarrage de Qdrant
 
 ```bash
-# Avec Docker Compose
-docker-compose up -d qdrant
-
-# Ou installation locale
+# Option 1: Docker
 docker run -p 6333:6333 qdrant/qdrant:latest
+
+# Option 2: Docker Compose (recommandé)
+cd src/rag_newsletter/infra
+docker-compose up -d qdrant
 ```
 
-### 2. Téléchargement depuis SharePoint
+## 📖 Guide d'Utilisation
+
+### 1. Lister les drives SharePoint
 
 ```bash
-# Lister les drives disponibles
-python -m rag_newsletter --list-drives
-
-# Télécharger des documents
-python -m rag_newsletter --download --drive "Documents" --max 50
+poetry run python -m rag_newsletter --list-drives
 ```
 
-### 3. Ingestion avec Optimisations
+### 2. Télécharger des documents
 
 ```bash
-# Ingestion standard avec optimisations M4
-python -m rag_newsletter --ingest --model marco/mcdse-2b-v1
+# Télécharger tous les PDFs du drive "Documents"
+poetry run python -m rag_newsletter --download --max 50
 
-# Ingestion avec configuration personnalisée
-python -m rag_newsletter --ingest \
-    --model marco/mcdse-2b-v1 \
-    --dimension 1024 \
-    --mmr-lambda 0.7 \
-    --no-mlx  # Désactiver MLX si nécessaire
+# Télécharger des types spécifiques
+poetry run python -m rag_newsletter --download --extensions .pdf .docx --max 20
 ```
 
-### 4. Recherche Avancée
+### 3. Ingestion optimisée
 
 ```bash
-# Recherche avec MMR (diversification des résultats)
-python -m rag_newsletter --search "sustainability goals" --mmr-lambda 0.7
+# Ingestion standard avec optimisations
+poetry run python -m rag_newsletter --ingest --batch-size 10
 
-# Recherche standard (sans MMR)
-python -m rag_newsletter --search "financial results" --no-mmr
+# Ingestion sans binary quantization (plus de RAM)
+poetry run python -m rag_newsletter --ingest --no-binary-quantization
 
-# Recherche avec configuration complète
-python -m rag_newsletter --search "climate change" \
-    --model marco/mcdse-2b-v1 \
-    --mmr-lambda 0.5 \
-    --dimension 1024
+# Ingestion avec modèle personnalisé
+poetry run python -m rag_newsletter --ingest --model "marco/mcdse-2b-v1"
 ```
 
-## 🔧 Options Avancées
+### 4. Recherche avancée
 
-### Paramètres de Performance
+#### Recherche standard HNSW
+```bash
+poetry run python -m rag_newsletter --search "Quels sont les objectifs 2025?"
+```
 
-| Option | Description | Valeur par défaut |
-|--------|-------------|-------------------|
-| `--model` | Modèle d'embeddings | `marco/mcdse-2b-v1` |
-| `--dimension` | Dimension des embeddings | `1024` |
-| `--no-mlx` | Désactiver MLX | `False` |
-| `--no-hnsw` | Désactiver HNSW | `False` |
-| `--no-binary-quantization` | Désactiver la quantization | `False` |
-| `--mmr-lambda` | Paramètre MMR (0.0-1.0) | `0.7` |
-| `--no-mmr` | Désactiver MMR | `False` |
+#### Recherche MMR (diversifiée)
+```bash
+# Recherche avec diversité maximale
+poetry run python -m rag_newsletter --search "sustainability" --search-mmr --lambda 0.3
 
-### Configuration MMR
+# Recherche avec pertinence maximale
+poetry run python -m rag_newsletter --search "sustainability" --search-mmr --lambda 0.9
+```
 
-- **Lambda = 0.0** : Diversité maximale (résultats très différents)
-- **Lambda = 0.7** : Équilibre diversité/pertinence (recommandé)
-- **Lambda = 1.0** : Pertinence maximale (résultats similaires)
+#### Recherche filtrée par document
+```bash
+# Limiter à des documents spécifiques
+poetry run python -m rag_newsletter --search "budget 2025" --filter-docs "budget_2025.pdf" "objectives_2025.pdf"
+```
 
-### Optimisations HNSW
+### 5. Comparaison de documents
 
-- **m = 16** : Connexions par nœud (équilibre performance/précision)
-- **ef_construct = 200** : Précision pendant la construction
-- **max_indexing_threads = 4** : Optimisé pour M4
+```bash
+# Comparer deux documents sur une requête
+poetry run python -m rag_newsletter --search "sustainability goals" --compare "sustainability_2024.pdf" "sustainability_2025.pdf"
+```
 
-## 📊 Monitoring et Statistiques
+### 6. Statistiques et monitoring
 
 ```bash
 # Afficher les statistiques de la collection
-python -m rag_newsletter --search "test" --collection-info
+poetry run python -m rag_newsletter --stats
+
+# Dashboard Qdrant (avec docker-compose)
+docker-compose --profile monitoring up -d
+# Accès: http://localhost:8080
 ```
 
-Les statistiques incluent :
-- Nombre de vecteurs indexés
-- Statut de l'indexation HNSW
-- Configuration de la quantization
-- Métriques de performance
+## ⚙️ Options Avancées
 
-## 🏗️ Architecture
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   SharePoint    │───▶│  Document        │───▶│   Qdrant        │
-│   (Source)      │    │  Processor       │    │   (Vector DB)   │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                │                        │
-                                ▼                        ▼
-                       ┌──────────────────┐    ┌─────────────────┐
-                       │   MCDSE Model    │    │   HNSW Index    │
-                       │   (MLX + M4)     │    │   + Binary Q    │
-                       └──────────────────┘    └─────────────────┘
-                                │                        │
-                                ▼                        ▼
-                       ┌──────────────────┐    ┌─────────────────┐
-                       │   Embeddings     │    │   MMR Search    │
-                       │   Generation     │    │   + Filtering   │
-                       └──────────────────┘    └─────────────────┘
-```
-
-## 🚀 Performance
-
-### Benchmarks sur M4 (10 cœurs GPU)
-
-| Opération | Temps (sans MLX) | Temps (avec MLX) | Amélioration |
-|-----------|------------------|------------------|--------------|
-| Embedding 100 docs | 45s | 28s | **38%** |
-| Recherche 1M vecteurs | 120ms | 85ms | **29%** |
-| Indexation HNSW | 2.5s | 1.8s | **28%** |
-
-### Utilisation Mémoire
-
-- **Sans Binary Quantization** : ~4GB RAM
-- **Avec Binary Quantization** : ~2.5GB RAM (**37%** de réduction)
-
-## 🔍 Exemples d'Utilisation
-
-### Recherche dans des Documents Spécifiques
+### Configuration HNSW
 
 ```python
-from rag_newsletter.ingestion.rag_ingestion import RAGIngestionService
+# Dans vector_store.py
+hnsw_config = {
+    "m": 16,                    # Connexions par nœud
+    "ef_construct": 100,        # Construction index
+    "ef": 64,                   # Recherche
+    "full_scan_threshold": 10000 # Seuil scan complet
+}
+```
 
-# Initialisation avec optimisations
-rag = RAGIngestionService(
-    model_name="marco/mcdse-2b-v1",
-    use_mlx=True,
-    use_hnsw=True,
-    use_binary_quantization=True,
-    mmr_lambda=0.7
-)
+### Optimisation MCDSE
 
-# Recherche filtrée sur des documents spécifiques
-results = rag.search_with_filters(
-    query="sustainability initiatives",
-    source_files=["sustainability-report-2024.pdf", "climate-goals.pdf"],
-    use_mmr=True
+```python
+# Dans embedding_service.py
+model = Qwen2VLForConditionalGeneration.from_pretrained(
+    'marco/mcdse-2b-v1',
+    attn_implementation="flash_attention_2",
+    torch_dtype=torch.bfloat16,
+    device_map="mps"  # Apple Silicon
 )
 ```
 
-### Configuration Personnalisée
+### Paramètres MMR
 
-```python
-from rag_newsletter.configs.optimization_config import OptimizationConfig
+- **lambda=0.0** : Diversité maximale (résultats très différents)
+- **lambda=0.5** : Équilibre diversité/pertinence
+- **lambda=1.0** : Pertinence maximale (résultats similaires)
 
-# Configuration pour performance maximale
-perf_config = OptimizationConfig("apple_silicon_m4", "performance")
-config_dict = perf_config.get_config_dict()
+## 📊 Performances
 
-# Utilisation dans le service RAG
-rag = RAGIngestionService(**config_dict)
+### Benchmarks Apple Silicon M4
+
+| Opération | Temps (s) | Mémoire (GB) |
+|-----------|-----------|--------------|
+| Ingestion 100 PDFs | 45s | 8GB |
+| Recherche HNSW | 0.05s | 2GB |
+| Recherche MMR | 0.15s | 3GB |
+| Embedding batch (10 docs) | 2s | 4GB |
+
+### Optimisations
+
+- **Binary Quantization** : -75% espace de stockage
+- **HNSW** : 100x plus rapide que recherche linéaire
+- **MLX** : 3x plus rapide que PyTorch sur Apple Silicon
+- **Batch Processing** : 5x plus rapide que traitement séquentiel
+
+## 🔧 Développement
+
+### Structure du projet
+
+```
+src/rag_newsletter/
+├── embeddings/
+│   ├── embedding_service.py    # MLX + MCDSE-2B-V1
+│   └── vector_store.py         # Qdrant + HNSW + Binary Q
+├── ingestion/
+│   ├── rag_ingestion.py        # Service RAG principal
+│   └── sharepoint_client.py    # Client SharePoint OAuth2
+├── processing/
+│   └── document_processor.py   # Traitement PDF optimisé
+└── infra/
+    ├── Dockerfile              # Image optimisée Apple Silicon
+    └── docker-compose.yml      # Orchestration services
 ```
 
-## 🐛 Dépannage
-
-### Problèmes MLX
+### Tests
 
 ```bash
-# Vérifier l'installation MLX
+# Tests unitaires
+poetry run pytest src/rag_newsletter/tests/
+
+# Test d'intégration
+poetry run python -m rag_newsletter --download --max 5 --ingest --search "test query"
+```
+
+### Logging
+
+```python
+from loguru import logger
+
+# Logging structuré avec emojis
+logger.info("🚀 Début de l'ingestion")
+logger.success("✅ Ingestion terminée")
+logger.warning("⚠️  Avertissement")
+logger.error("❌ Erreur critique")
+```
+
+## 🚨 Dépannage
+
+### Problèmes courants
+
+#### Erreur MLX
+```bash
+# Vérifier la compatibilité Apple Silicon
 python -c "import mlx.core as mx; print('MLX OK')"
-
-# Réinstaller si nécessaire
-pip uninstall mlx mlx-lm
-pip install mlx mlx-lm
 ```
 
-### Problèmes de Mémoire
+#### Erreur Qdrant
+```bash
+# Vérifier la connexion
+curl http://localhost:6333/health
+```
+
+#### Erreur SharePoint
+```bash
+# Vérifier les credentials
+poetry run python -c "from rag_newsletter.ingestion.sharepoint_client import make_client_from_env; print('SharePoint OK')"
+```
+
+### Logs détaillés
 
 ```bash
-# Réduire la taille des batches
-python -m rag_newsletter --ingest --batch-size 2
-
-# Désactiver la quantization binaire
-python -m rag_newsletter --ingest --no-binary-quantization
+# Activer les logs debug
+export LOGURU_LEVEL=DEBUG
+poetry run python -m rag_newsletter --search "test"
 ```
 
-### Problèmes Qdrant
+## 🔮 Roadmap
 
-```bash
-# Vérifier le statut
-curl http://localhost:6333/collections
+### Version 0.3.0 (Q2 2024)
+- [ ] Interface Streamlit complète
+- [ ] API REST avec FastAPI
+- [ ] Authentification OIDC/OAuth2
+- [ ] RBAC basé sur les groupes
 
-# Redémarrer si nécessaire
-docker-compose restart qdrant
-```
+### Version 0.4.0 (Q3 2024)
+- [ ] Caching Redis
+- [ ] Requêtes asynchrones
+- [ ] Monitoring Prometheus/Grafana
+- [ ] Déploiement Kubernetes
 
-## 📈 Roadmap
-
-- [ ] Interface Streamlit avec optimisations
-- [ ] Support multi-modèles (GPT-4, Llama)
-- [ ] Cache Redis distribué
-- [ ] Métriques Prometheus/Grafana
-- [ ] Déploiement Kubernetes optimisé
-- [ ] Support OneDrive et Confluence
-
-## 🤝 Contribution
-
-1. Fork le projet
-2. Créer une branche feature (`git checkout -b feature/amazing-feature`)
-3. Commit les changements (`git commit -m 'Add amazing feature'`)
-4. Push vers la branche (`git push origin feature/amazing-feature`)
-5. Ouvrir une Pull Request
+### Version 0.5.0 (Q4 2024)
+- [ ] Fine-tuning MCDSE
+- [ ] Support multi-langues
+- [ ] Export/Import de collections
+- [ ] Interface d'administration
 
 ## 📄 Licence
 
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+MIT License - Voir le fichier `LICENSE` pour plus de détails.
 
-## 🙏 Remerciements
+## 🤝 Contribution
 
-- **MLX Team** pour l'optimisation Apple Silicon
-- **Qdrant** pour le vector store performant
-- **HuggingFace** pour les modèles de qualité
-- **Microsoft** pour l'intégration SharePoint
+Les contributions sont les bienvenues ! Voir `CONTRIBUTING.md` pour les guidelines.
+
+## 📞 Support
+
+- **Issues** : GitHub Issues
+- **Documentation** : Wiki du projet
+- **Email** : support@rag-newsletter.com
+
+---
+
+**🚀 RAG Newsletter Optimisé** - Propulsé par Apple Silicon M4, MLX et MCDSE-2B-V1

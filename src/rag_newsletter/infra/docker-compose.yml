@@ -1,122 +1,76 @@
-# infra/docker-compose.yml
-# Configuration optimisée pour RAG Newsletter avec MLX et MCDSE
+# Docker Compose optimisé pour Apple Silicon M4
 version: '3.8'
 
 services:
-  # Service principal RAG
   rag-app:
     build:
-      context: ..
-      dockerfile: infra/Dockerfile
+      context: ../../
+      dockerfile: src/rag_newsletter/infra/Dockerfile
+    container_name: rag-newsletter-app
     env_file:
-      - ../.env
+      - ../../.env
     ports:
-      - "8501:8501"   # Streamlit UI
-      - "8000:8000"   # API REST (futur)
-    depends_on:
-      qdrant:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - "8501:8501"   # Streamlit (quand implémenté)
+      - "8000:8000"   # API (quand implémenté)
     volumes:
-      - ../downloads:/app/downloads
-      - model_cache:/app/models
+      - ../../downloads:/app/downloads
+      - ../../logs:/app/logs
+      - qdrant_data:/qdrant/storage
+    depends_on:
+      - qdrant
     environment:
-      - MLX_ENABLED=true
-      - HNSW_ENABLED=true
-      - BINARY_QUANTIZATION=true
-      - MMR_LAMBDA=0.7
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-        reservations:
-          memory: 4G
+      - MLX_ENABLE_GPU=1
+      - MLX_DEVICE=mps
+      - PYTHONPATH=/app/src
+    command: ["poetry", "run", "python", "-m", "rag_newsletter", "--help"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  # Vector Database Qdrant avec optimisations
   qdrant:
-    image: qdrant/qdrant:v1.7.0
+    image: qdrant/qdrant:v1.7.4
+    container_name: rag-newsletter-qdrant
     ports:
       - "6333:6333"
-      - "6334:6334"  # gRPC port
+      - "6334:6334"  # gRPC
     volumes:
-      - qdrant_storage:/qdrant/storage
+      - qdrant_data:/qdrant/storage
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__ENABLE_CORS=true
       - QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_REQUESTS=100
       - QDRANT__STORAGE__PERFORMANCE__MAX_OPTIMIZATION_THREADS=4
-      - QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD=20000
-      - QDRANT__STORAGE__OPTIMIZERS__FLUSH_INTERVAL_SEC=5
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    restart: unless-stopped
+      start_period: 10s
 
-  # Cache Redis pour optimiser les performances
-  redis:
-    image: redis:7-alpine
+  # Service optionnel pour le monitoring
+  qdrant-dashboard:
+    image: qdrant/qdrant-dashboard:latest
+    container_name: rag-newsletter-dashboard
     ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-
-  # Monitoring avec Prometheus (optionnel)
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-    profiles:
-      - monitoring
-    restart: unless-stopped
-
-  # Visualisation avec Grafana (optionnel)
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
+      - "8080:8080"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      - qdrant
+    restart: unless-stopped
     profiles:
       - monitoring
-    restart: unless-stopped
 
 volumes:
-  qdrant_storage:
-    driver: local
-  redis_data:
-    driver: local
-  model_cache:
-    driver: local
-  prometheus_data:
-    driver: local
-  grafana_data:
+  qdrant_data:
     driver: local
 
 networks:
   default:
-    name: rag_newsletter_network
-    driver: bridge
+    name: rag-newsletter-network

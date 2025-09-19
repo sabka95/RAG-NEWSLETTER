@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "rag-newsletter"
 version = "0.2.0"
-description = "RAG Newsletter with MLX-powered embeddings and advanced vector search"
+description = "RAG Newsletter with MLX-powered MCDSE embeddings"
 authors = ["Votre Nom <vous@example.com>"]
 readme = "README.md"
 
@@ -18,45 +18,43 @@ requests = "^2.32.5"
 pydantic-settings = "^2.10.1"
 python-dotenv = "^1.1.1"
 
-# RAG Core Dependencies
-langchain = "^0.1.0"
-langchain-community = "^0.0.20"
-qdrant-client = "^1.7.0"
-
-# MLX for Apple Silicon optimization
-mlx = "^0.11.0"
-mlx-lm = "^0.12.0"
-
-# Model and Processing
-transformers = "^4.40.0"
-torch = "^2.2.0"
-accelerate = "^0.25.0"
-sentence-transformers = "^2.7.0"
+        # MLX and ML Framework (optimized for Apple Silicon)
+        mlx = "^0.19.0"
+        mlx-lm = "^0.19.0"
+        accelerate = "^0.30.0"
 
 # Document Processing
 pymupdf = "^1.23.0"
 pillow = "^10.0.0"
-pdf2image = "^1.17.0"
+pypdf = "^4.0.0"
 
-# Vector Search and Quantization
-numpy = "^1.26.0"
-scipy = "^1.12.0"
-scikit-learn = "^1.4.0"
+# Vector Store and Search
+qdrant-client = "^1.7.0"
+numpy = "^1.24.0"
+scikit-learn = "^1.3.0"
+
+# RAG Framework
+langchain = "^0.1.0"
+langchain-community = "^0.0.20"
 
 # Utilities
 typing-extensions = "^4.8.0"
 tqdm = "^4.66.0"
-psutil = "^5.9.0"
+loguru = "^0.7.0"
 
-# Development and Testing
+# Optional: For advanced features
+# streamlit = "^1.28.0"  # Uncomment when implementing UI
+# redis = "^5.0.0"       # Uncomment when implementing caching
+torch = "2.5.0"
+torchvision = "0.20.0"
+transformers = "4.47.0"
+
+[tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
 pytest-asyncio = "^0.21.0"
 black = "^23.0.0"
 isort = "^5.12.0"
-
-[tool.poetry.group.dev.dependencies]
-jupyter = "^1.0.0"
-notebook = "^7.0.0"
+flake8 = "^6.0.0"
 
 [tool.poetry.scripts]
 rag-newsletter = "rag_newsletter.__main__:main"
