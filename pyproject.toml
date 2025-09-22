@@ -2,7 +2,7 @@
 name = "rag-newsletter"
 version = "0.2.0"
 description = "RAG Newsletter with MLX-powered MCDSE embeddings"
-authors = ["Votre Nom <vous@example.com>"]
+authors = ["Sabri Kaci <sabrikaci248@gmail.com>"]
 readme = "README.md"
 
 [[tool.poetry.packages]]

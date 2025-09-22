@@ -1,4 +1,4 @@
-# =============================================================================
+ # =============================================================================
 # RAG Newsletter - Service de Vector Store Optimisé
 # =============================================================================
 # Service de gestion du vector store Qdrant optimisé pour Apple Silicon avec
@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from langchain.schema import Document
+from langchain_community.vectorstores import Qdrant as LangChainQdrant
+from .embedding_service import LangChainMLXEmbeddings
 from loguru import logger
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -96,6 +98,9 @@ class OptimizedVectorStoreService:
 
             # Créer la collection si elle n'existe pas avec les optimisations
             self._create_collection_if_not_exists()
+            
+            # Initialiser le vector store LangChain pour MMR
+            self._initialize_langchain_vectorstore()
 
             logger.info("✅ Client Qdrant initialisé avec optimisations HNSW")
         except Exception as e:
@@ -169,6 +174,30 @@ class OptimizedVectorStoreService:
         except Exception as e:
             logger.error(f"❌ Erreur lors de la création de la collection: {e}")
             raise RuntimeError(f"Impossible de créer la collection Qdrant: {e}")
+
+    def _initialize_langchain_vectorstore(self):
+        """
+        Initialise le vector store LangChain pour MMR et autres fonctionnalités.
+        
+        Cette méthode crée un vector store LangChain qui utilise la collection Qdrant
+        existante pour effectuer des recherches MMR et autres opérations LangChain.
+        """
+        try:
+            # Créer un wrapper LangChain pour notre service MLX
+            langchain_embeddings = LangChainMLXEmbeddings(self.embedding_service)
+            
+            # Créer un vector store LangChain à partir de notre client Qdrant
+            self.langchain_vectorstore = LangChainQdrant(
+                client=self.client,
+                collection_name=self.collection_name,
+                embeddings=langchain_embeddings
+            )
+            
+            logger.info("✅ Vector store LangChain initialisé")
+        except Exception as e:
+            logger.error(f"❌ Erreur lors de l'initialisation du vector store: {e}")
+            # Ne pas lever d'exception car MMR est optionnel
+            self.langchain_vectorstore = None
 
     def add_documents(self, documents: List[Document]) -> List[str]:
         """
@@ -259,102 +288,25 @@ class OptimizedVectorStoreService:
             logger.error(f"❌ Erreur lors de l'ajout des documents: {e}")
             raise RuntimeError(f"Impossible d'ajouter les documents: {e}")
 
-    def similarity_search(
-        self, query: str, k: int = 5, filter: Optional[Dict] = None
-    ) -> List[Document]:
-        """
-        Recherche de similarité optimisée avec HNSW pour Apple Silicon.
-
-        Cette méthode effectue une recherche vectorielle rapide dans la collection
-        Qdrant en utilisant l'algorithme HNSW optimisé pour les processeurs M4.
-
-        Args:
-            query (str): Requête textuelle à rechercher (ex: "sustainability strategy")
-            k (int): Nombre de résultats à retourner (défaut: 5)
-            filter (Optional[Dict]): Filtres de métadonnées à appliquer
-
-        Returns:
-            List[Document]: Liste des documents les plus similaires à la requête
-
-        Raises:
-            RuntimeError: Si le client Qdrant n'est pas initialisé ou si la recherche échoue
-
-        Exemple:
-            >>> service = OptimizedVectorStoreService(embedding_service=mlx_service)
-            >>> results = service.similarity_search("climate change", k=3)
-            >>> print(f"Trouvé {len(results)} documents similaires")
-        """
-        if not self.client:
-            raise RuntimeError(
-                "Client Qdrant non initialisé. Appelez d'abord __init__()"
-            )
-
-        try:
-            # Générer l'embedding de la requête avec le service MLX
-            query_embedding = self.embedding_service.embed_query(query)
-
-            # Recherche optimisée avec HNSW
-            search_params = models.SearchParams(
-                hnsw_ef=self.hnsw_config[
-                    "ef"
-                ],  # Utiliser la configuration HNSW optimisée
-                exact=False,  # Utiliser HNSW au lieu du scan exact (plus rapide)
-            )
-
-            # Effectuer la recherche dans Qdrant
-            results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=k,
-                with_payload=True,  # Inclure les métadonnées
-                search_params=search_params,
-                query_filter=self._build_filter(filter) if filter else None,
-            )
-
-            # Convertir les résultats en documents LangChain
-            documents = []
-            for result in results:
-                doc = Document(
-                    page_content=result.payload.get("page_content", ""),
-                    metadata={
-                        k: v for k, v in result.payload.items() if k != "page_content"
-                    },
-                )
-                documents.append(doc)
-
-            logger.info(f"🔍 Recherche HNSW terminée: {len(documents)} résultats")
-            return documents
-
-        except Exception as e:
-            logger.error(f"❌ Erreur lors de la recherche: {e}")
-            raise RuntimeError(f"Impossible d'effectuer la recherche: {e}")
-
-    def similarity_search_with_score(
+    def _perform_search(
         self, query: str, k: int = 5, filter: Optional[Dict] = None
     ) -> List[Tuple[Document, float]]:
         """
-        Recherche de similarité avec scores et optimisations HNSW pour Apple Silicon.
+        Effectue une recherche vectorielle HNSW et retourne les résultats avec scores.
 
-        Cette méthode effectue une recherche vectorielle rapide et retourne les documents
-        avec leurs scores de similarité, permettant d'évaluer la pertinence des résultats.
+        Cette méthode privée centralise la logique de recherche commune aux deux
+        fonctions publiques similarity_search et similarity_search_with_score.
 
         Args:
-            query (str): Requête textuelle à rechercher (ex: "sustainability strategy")
-            k (int): Nombre de résultats à retourner (défaut: 5)
+            query (str): Requête textuelle à rechercher
+            k (int): Nombre de résultats à retourner
             filter (Optional[Dict]): Filtres de métadonnées à appliquer
 
         Returns:
             List[Tuple[Document, float]]: Liste de tuples (document, score_de_similarité)
-                                        Les scores sont entre 0 et 1 (1 = parfaitement similaire)
 
         Raises:
             RuntimeError: Si le client Qdrant n'est pas initialisé ou si la recherche échoue
-
-        Exemple:
-            >>> service = OptimizedVectorStoreService(embedding_service=mlx_service)
-            >>> results = service.similarity_search_with_score("climate change", k=3)
-            >>> for doc, score in results:
-            ...     print(f"Score: {score:.3f} - {doc.page_content[:50]}...")
         """
         if not self.client:
             raise RuntimeError(
@@ -394,226 +346,181 @@ class OptimizedVectorStoreService:
                 )
                 documents_with_scores.append((doc, result.score))
 
-            logger.info(
-                f"🔍 Recherche HNSW avec scores terminée: {len(documents_with_scores)} résultats"
-            )
             return documents_with_scores
 
         except Exception as e:
-            logger.error(f"❌ Erreur lors de la recherche avec scores: {e}")
-            raise RuntimeError(f"Impossible d'effectuer la recherche avec scores: {e}")
+            logger.error(f"❌ Erreur lors de la recherche: {e}")
+            raise RuntimeError(f"Impossible d'effectuer la recherche: {e}")
 
-    def mmr_search(
-        self,
-        query: str,
-        k: int = 5,
-        lambda_mult: float = 0.7,
+    def similarity_search(
+        self, 
+        query: str, 
+        k: int = 5, 
         filter: Optional[Dict] = None,
-    ) -> List[Tuple[Document, float]]:
+        use_mmr: bool = False,
+        lambda_mult: float = 0.7
+    ) -> List[Document]:
         """
-        Recherche MMR (Maximum Marginal Relevance) pour diversifier les résultats.
+        Recherche de similarité optimisée avec HNSW et/ou MMR pour Apple Silicon.
 
-        Cette méthode utilise l'algorithme MMR pour sélectionner des documents
-        qui sont à la fois pertinents par rapport à la requête et diversifiés
-        entre eux, évitant la redondance dans les résultats.
+        Cette méthode effectue une recherche vectorielle dans la collection Qdrant :
+        - HNSW seul : Rapide et pertinent (par défaut)
+        - HNSW + MMR : Rapide ET diversifié (recommandé)
+
+        HNSW et MMR sont complémentaires :
+        - HNSW : Indexation rapide pour trouver les candidats
+        - MMR : Sélection intelligente pour diversifier les résultats
 
         Args:
             query (str): Requête textuelle à rechercher (ex: "sustainability strategy")
             k (int): Nombre de résultats à retourner (défaut: 5)
-            lambda_mult (float): Facteur de diversité (0.0 = max diversité, 1.0 = max pertinence)
             filter (Optional[Dict]): Filtres de métadonnées à appliquer
+            use_mmr (bool): Utiliser HNSW+MMR pour diversifier (défaut: False)
+            lambda_mult (float): Facteur de diversité MMR (0.0 = max diversité, 1.0 = max pertinence)
 
         Returns:
-            List[Tuple[Document, float]]: Liste de tuples (document, score_mmr)
-                                        Les scores MMR combinent pertinence et diversité
+            List[Document]: Liste des documents les plus similaires à la requête
 
         Raises:
             RuntimeError: Si le client Qdrant n'est pas initialisé ou si la recherche échoue
 
         Exemple:
             >>> service = OptimizedVectorStoreService(embedding_service=mlx_service)
-            >>> results = service.mmr_search("sustainability", k=3, lambda_mult=0.5)
-            >>> for doc, score in results:
-            ...     print(f"Score MMR: {score:.3f} - {doc.page_content[:50]}...")
+            >>> # HNSW seul (rapide)
+            >>> results = service.similarity_search("climate change", k=3)
+            >>> # HNSW + MMR (rapide ET diversifié)
+            >>> results = service.similarity_search("climate change", k=3, use_mmr=True, lambda_mult=0.5)
         """
-        if not self.client:
-            raise RuntimeError(
-                "Client Qdrant non initialisé. Appelez d'abord __init__()"
-            )
-
-        try:
-            # Récupérer plus de résultats pour l'algorithme MMR
-            # MMR a besoin de plus de candidats pour bien diversifier
-            fetch_k = min(k * 3, 50)  # Récupérer 3x plus de résultats (max 50)
-
-            # Recherche initiale avec HNSW
-            search_params = models.SearchParams(
-                hnsw_ef=self.hnsw_config[
-                    "ef"
-                ],  # Utiliser la configuration HNSW optimisée
-                exact=False,  # Utiliser HNSW au lieu du scan exact (plus rapide)
-            )
-
-            # Effectuer la recherche dans Qdrant
-            results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=self.embedding_service.embed_query(query),
-                limit=fetch_k,
-                with_payload=True,  # Inclure les métadonnées
-                search_params=search_params,
-                query_filter=self._build_filter(filter) if filter else None,
-            )
-
-            if not results:
-                return []
-
-            # Convertir en documents avec scores
-            candidate_docs = []
-            candidate_scores = []
-            for result in results:
-                doc = Document(
-                    page_content=result.payload.get("page_content", ""),
-                    metadata={
-                        k: v for k, v in result.payload.items() if k != "page_content"
-                    },
+        if use_mmr:
+            # Utiliser HNSW + MMR (complémentaires) via LangChain
+            if not self.langchain_vectorstore:
+                raise RuntimeError("Vector store LangChain non initialisé pour MMR")
+            
+            try:
+                # Utiliser MMR de LangChain directement
+                documents = self.langchain_vectorstore.max_marginal_relevance_search(
+                    query=query,
+                    k=k,
+                    lambda_mult=lambda_mult,
+                    filter=filter
                 )
-                candidate_docs.append(doc)
-                candidate_scores.append(result.score)
+                
+                # Récupérer les métadonnées complètes pour chaque document
+                documents_with_metadata = []
+                for doc in documents:
+                    doc_id = doc.metadata.get('_id')
+                    if doc_id:
+                        # Récupérer les métadonnées complètes depuis Qdrant
+                        try:
+                            point = self.client.retrieve(
+                                collection_name=self.collection_name,
+                                ids=[doc_id],
+                                with_payload=True
+                            )[0]
+                            # Remplacer les métadonnées limitées par les complètes
+                            doc.metadata = {k: v for k, v in point.payload.items() if k != "page_content"}
+                        except Exception as e:
+                            logger.warning(f"Impossible de récupérer les métadonnées pour ID {doc_id}: {e}")
+                    documents_with_metadata.append(doc)
+                
+                logger.info(f"🎯 Recherche HNSW+MMR LangChain terminée: {len(documents_with_metadata)} résultats diversifiés")
+                return documents_with_metadata
+            except Exception as e:
+                logger.error(f"❌ Erreur MMR LangChain, fallback vers HNSW seul: {e}")
+                # Fallback vers HNSW seul en cas d'erreur MMR
+                results = self._perform_search(query, k, filter)
+                documents = [doc for doc, score in results]
+                logger.info(f"🔍 Recherche HNSW seul (fallback) terminée: {len(documents)} résultats")
+                return documents
+        else:
+            # Utiliser HNSW seul (rapide mais moins diversifié)
+            results = self._perform_search(query, k, filter)
+            documents = [doc for doc, score in results]
+            logger.info(f"🔍 Recherche HNSW seul terminée: {len(documents)} résultats")
+            return documents
 
-            # Appliquer l'algorithme MMR pour diversifier les résultats
-            selected_docs = self._apply_mmr(
-                query_embedding=self.embedding_service.embed_query(query),
-                candidate_docs=candidate_docs,
-                candidate_scores=candidate_scores,
-                k=k,
-                lambda_mult=lambda_mult,
-            )
-
-            logger.info(
-                f"🎯 Recherche MMR terminée: {len(selected_docs)} résultats diversifiés"
-            )
-            return selected_docs
-
-        except Exception as e:
-            logger.error(f"❌ Erreur lors de la recherche MMR: {e}")
-            raise RuntimeError(f"Impossible d'effectuer la recherche MMR: {e}")
-
-    def _apply_mmr(
-        self,
-        query_embedding: List[float],
-        candidate_docs: List[Document],
-        candidate_scores: List[float],
-        k: int,
-        lambda_mult: float,
+    def similarity_search_with_score(
+        self, 
+        query: str, 
+        k: int = 5, 
+        filter: Optional[Dict] = None,
+        use_mmr: bool = False,
+        lambda_mult: float = 0.7
     ) -> List[Tuple[Document, float]]:
         """
-        Applique l'algorithme MMR (Maximum Marginal Relevance) pour diversifier les résultats.
+        Recherche de similarité avec scores et optimisations HNSW ou MMR pour Apple Silicon.
 
-        L'algorithme MMR sélectionne des documents qui maximisent la pertinence
-        par rapport à la requête tout en minimisant la redondance entre les résultats.
-
-        Args:
-            query_embedding (List[float]): Embedding de la requête (1536 dimensions)
-            candidate_docs (List[Document]): Documents candidats à diversifier
-            candidate_scores (List[float]): Scores de similarité initiaux des candidats
-            k (int): Nombre de résultats à sélectionner
-            lambda_mult (float): Facteur de diversité (0.0 = max diversité, 1.0 = max pertinence)
-
-        Returns:
-            List[Tuple[Document, float]]: Liste des documents sélectionnés avec scores MMR
-                                        Les scores MMR combinent pertinence et diversité
-        """
-        if len(candidate_docs) <= k:
-            return list(zip(candidate_docs, candidate_scores))
-
-        # Convertir en numpy pour les calculs
-        query_vec = np.array(query_embedding).reshape(1, -1)
-
-        # Calculer les embeddings des documents candidats
-        doc_embeddings = []
-        for doc in candidate_docs:
-            # Re-générer l'embedding du document (ou utiliser le cache si disponible)
-            doc_embedding = self._get_document_embedding(doc)
-            # S'assurer que l'embedding est un array 1D
-            if isinstance(doc_embedding, list):
-                doc_embedding = np.array(doc_embedding)
-            doc_embeddings.append(doc_embedding.flatten())
-
-        doc_embeddings = np.array(doc_embeddings)
-
-        # Algorithme MMR
-        selected_indices = []
-        remaining_indices = list(range(len(candidate_docs)))
-
-        # Sélectionner le premier document (le plus pertinent)
-        best_idx = np.argmax(candidate_scores)
-        selected_indices.append(best_idx)
-        remaining_indices.remove(best_idx)
-
-        # Sélectionner les documents restants
-        for _ in range(min(k - 1, len(remaining_indices))):
-            mmr_scores = []
-
-            for idx in remaining_indices:
-                # Score de pertinence (similarité avec la requête)
-                relevance = cosine_similarity(
-                    query_vec, doc_embeddings[idx].reshape(1, -1)
-                )[0][0]
-
-                # Score de diversité (similarité maximale avec les documents déjà sélectionnés)
-                if selected_indices:
-                    max_similarity = max(
-                        [
-                            cosine_similarity(
-                                doc_embeddings[idx].reshape(1, -1),
-                                doc_embeddings[sel_idx].reshape(1, -1),
-                            )[0][0]
-                            for sel_idx in selected_indices
-                        ]
-                    )
-                else:
-                    max_similarity = 0
-
-                # Score MMR
-                mmr_score = lambda_mult * relevance - (1 - lambda_mult) * max_similarity
-                mmr_scores.append(mmr_score)
-
-            # Sélectionner le document avec le meilleur score MMR
-            best_idx = remaining_indices[np.argmax(mmr_scores)]
-            selected_indices.append(best_idx)
-            remaining_indices.remove(best_idx)
-
-        # Retourner les documents sélectionnés avec leurs scores initiaux
-        selected_docs = []
-        for idx in selected_indices:
-            selected_docs.append((candidate_docs[idx], candidate_scores[idx]))
-
-        return selected_docs
-
-    def _get_document_embedding(self, doc: Document) -> List[float]:
-        """
-        Récupère l'embedding d'un document en utilisant le cache si disponible.
-
-        Cette méthode optimise les performances en évitant de re-générer
-        les embeddings déjà calculés, ce qui est crucial pour l'algorithme MMR.
+        Cette méthode effectue une recherche vectorielle rapide et retourne les documents
+        avec leurs scores de similarité, permettant d'évaluer la pertinence des résultats.
 
         Args:
-            doc (Document): Document LangChain dont on veut l'embedding
+            query (str): Requête textuelle à rechercher (ex: "sustainability strategy")
+            k (int): Nombre de résultats à retourner (défaut: 5)
+            filter (Optional[Dict]): Filtres de métadonnées à appliquer
+            use_mmr (bool): Utiliser MMR pour diversifier les résultats (défaut: False)
+            lambda_mult (float): Facteur de diversité pour MMR (0.0 = max diversité, 1.0 = max pertinence)
 
         Returns:
-            List[float]: Embedding du document (1536 dimensions)
+            List[Tuple[Document, float]]: Liste de tuples (document, score_de_similarité)
+                                        Les scores sont entre 0 et 1 (1 = parfaitement similaire)
 
-        Note:
-            Dans un système de production, un cache Redis serait plus approprié
-            pour gérer les embeddings de manière distribuée.
+        Raises:
+            RuntimeError: Si le client Qdrant n'est pas initialisé ou si la recherche échoue
+
+        Exemple:
+            >>> service = OptimizedVectorStoreService(embedding_service=mlx_service)
+            >>> # Recherche HNSW avec scores
+            >>> results = service.similarity_search_with_score("climate change", k=3)
+            >>> # Recherche MMR avec scores
+            >>> results = service.similarity_search_with_score("climate change", k=3, use_mmr=True)
         """
-        # Si l'embedding est déjà en cache dans les métadonnées
-        if "cached_embedding" in doc.metadata:
-            return doc.metadata["cached_embedding"]
-
-        # Sinon, re-générer l'embedding avec le service MLX
-        # Note: Dans un système de production, vous voudriez utiliser un cache Redis
-        return self.embedding_service.embed_documents([doc])[0]
+        if use_mmr:
+            # Utiliser HNSW + MMR (complémentaires) via LangChain
+            if not self.langchain_vectorstore:
+                raise RuntimeError("Vector store LangChain non initialisé pour MMR")
+            
+            try:
+                # Utiliser MMR de LangChain directement
+                documents = self.langchain_vectorstore.max_marginal_relevance_search(
+                    query=query,
+                    k=k,
+                    lambda_mult=lambda_mult,
+                    filter=filter
+                )
+                
+                # Récupérer les métadonnées complètes pour chaque document
+                documents_with_metadata = []
+                for doc in documents:
+                    doc_id = doc.metadata.get('_id')
+                    if doc_id:
+                        # Récupérer les métadonnées complètes depuis Qdrant
+                        try:
+                            point = self.client.retrieve(
+                                collection_name=self.collection_name,
+                                ids=[doc_id],
+                                with_payload=True
+                            )[0]
+                            # Remplacer les métadonnées limitées par les complètes
+                            doc.metadata = {k: v for k, v in point.payload.items() if k != "page_content"}
+                        except Exception as e:
+                            logger.warning(f"Impossible de récupérer les métadonnées pour ID {doc_id}: {e}")
+                    documents_with_metadata.append(doc)
+                
+                # MMR ne retourne pas de scores, on utilise 1.0 par défaut
+                results = [(doc, 1.0) for doc in documents_with_metadata]
+                logger.info(f"🎯 Recherche HNSW+MMR LangChain avec scores terminée: {len(results)} résultats diversifiés")
+                return results
+            except Exception as e:
+                logger.error(f"❌ Erreur MMR LangChain, fallback vers HNSW seul: {e}")
+                # Fallback vers HNSW seul en cas d'erreur MMR
+                results = self._perform_search(query, k, filter)
+                logger.info(f"🔍 Recherche HNSW seul (fallback) avec scores terminée: {len(results)} résultats")
+                return results
+        else:
+            # Utiliser HNSW seul (rapide mais moins diversifié)
+            results = self._perform_search(query, k, filter)
+            logger.info(f"🔍 Recherche HNSW seul avec scores terminée: {len(results)} résultats")
+            return results
 
     def _build_filter(self, filter_dict: Dict) -> models.Filter:
         """

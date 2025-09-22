@@ -114,9 +114,6 @@ class OptimizedRAGIngestionService:
             logger.info(
                 f"💾 Ajout de {len(all_chunks)} chunks au vector store optimisé..."
             )
-            logger.info(
-                "⏳ Génération des embeddings MCDSE... (optimisé pour Apple Silicon)"
-            )
 
             ids = self.vector_store.add_documents(all_chunks)
 
@@ -186,13 +183,13 @@ class OptimizedRAGIngestionService:
             # Utiliser MMR si demandé ou configuré
             if (use_mmr is True) or (use_mmr is None and self.use_mmr):
                 logger.info(f"🎯 Recherche MMR avec lambda={lambda_mult}")
-                results = self.vector_store.mmr_search(
-                    query=query, k=k, lambda_mult=lambda_mult, filter=filter
+                results = self.vector_store.similarity_search_with_score(
+                    query=query, k=k, filter=filter, use_mmr=True, lambda_mult=lambda_mult
                 )
             else:
                 logger.info("🔍 Recherche HNSW standard")
                 results = self.vector_store.similarity_search_with_score(
-                    query=query, k=k, filter=filter
+                    query=query, k=k, filter=filter, use_mmr=False
                 )
 
             # Formater les résultats

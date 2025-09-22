@@ -6,11 +6,11 @@
 # =============================================================================
 
 import io
-import math
 from typing import List
 
 import torch
 from langchain.schema import Document
+from langchain.embeddings.base import Embeddings
 from loguru import logger
 from PIL import Image
 from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
@@ -123,79 +123,6 @@ class MLXEmbeddingService:
             logger.error(f"❌ Erreur lors du chargement du modèle: {e}")
             raise RuntimeError(f"Impossible de charger le modèle MCDSE: {e}")
 
-    def _smart_resize(
-        self,
-        height: int,
-        width: int,
-        max_pixels: int = 960 * 28 * 28,
-        min_pixels: int = 1 * 28 * 28,
-    ) -> tuple[int, int]:
-        """
-        Redimensionne intelligemment une image selon les contraintes du modèle MCDSE-2B-V1.
-
-        Le modèle MCDSE-2B-V1 a des contraintes strictes sur la taille des images:
-        - Les dimensions doivent être des multiples de 28
-        - Le nombre total de pixels doit être entre min_pixels et max_pixels
-        - L'aspect ratio doit être préservé autant que possible
-
-        Args:
-            height (int): Hauteur originale de l'image
-            width (int): Largeur originale de l'image
-            max_pixels (int): Nombre maximum de pixels autorisés (défaut: 960*28*28)
-            min_pixels (int): Nombre minimum de pixels autorisés (défaut: 1*28*28)
-
-        Returns:
-            tuple[int, int]: Nouvelle hauteur et largeur respectant les contraintes
-
-        Exemple:
-            >>> service = MLXEmbeddingService()
-            >>> new_h, new_w = service._smart_resize(1000, 800)
-            >>> print(f"Nouvelles dimensions: {new_h}x{new_w}")
-        """
-
-        def round_by_factor(number: float, factor: int) -> int:
-            """Arrondit un nombre au multiple le plus proche du facteur."""
-            return round(number / factor) * factor
-
-        def ceil_by_factor(number: float, factor: int) -> int:
-            """Arrondit un nombre au multiple supérieur du facteur."""
-            return math.ceil(number / factor) * factor
-
-        def floor_by_factor(number: float, factor: int) -> int:
-            """Arrondit un nombre au multiple inférieur du facteur."""
-            return math.floor(number / factor) * factor
-
-        # Étape 1: Arrondir aux multiples de 28 (contrainte du modèle)
-        h_bar = max(28, round_by_factor(height, 28))
-        w_bar = max(28, round_by_factor(width, 28))
-
-        # Étape 2: Vérifier si l'image est trop grande
-        if h_bar * w_bar > max_pixels:
-            # Calculer le facteur de réduction pour respecter max_pixels
-            beta = math.sqrt((height * width) / max_pixels)
-            h_bar = floor_by_factor(height / beta, 28)
-            w_bar = floor_by_factor(width / beta, 28)
-        # Étape 3: Vérifier si l'image est trop petite
-        elif h_bar * w_bar < min_pixels:
-            # Calculer le facteur d'agrandissement pour respecter min_pixels
-            beta = math.sqrt(min_pixels / (height * width))
-            h_bar = ceil_by_factor(height * beta, 28)
-            w_bar = ceil_by_factor(width * beta, 28)
-
-        return h_bar, w_bar
-
-    def _resize_image(self, image: Image.Image) -> Image.Image:
-        """
-        Redimensionne une image selon les contraintes du modèle MCDSE-2B-V1.
-
-        Args:
-            image (Image.Image): Image PIL à redimensionner
-
-        Returns:
-            Image.Image: Image redimensionnée respectant les contraintes du modèle
-        """
-        new_size = self._smart_resize(image.height, image.width)
-        return image.resize(new_size, Image.Resampling.LANCZOS)
 
     def embed_documents(self, documents: List[Document]) -> List[List[float]]:
         """
@@ -246,22 +173,9 @@ class MLXEmbeddingService:
                     )
                     continue
 
-                # Convertir les données en image PIL
+                # Convertir les bytes en image PIL (déjà validé par document_processor)
                 try:
-                    if isinstance(image_data, bytes):
-                        # Données d'image en bytes (format le plus courant)
-                        image = Image.open(io.BytesIO(image_data))
-                    else:
-                        # Chemin vers un fichier image
-                        image = Image.open(image_data)
-
-                    # Vérifier que l'image est valide
-                    if image.size[0] == 0 or image.size[1] == 0:
-                        logger.warning(
-                            f"Image invalide pour le document {doc.metadata.get('source_file', 'inconnu')}"
-                        )
-                        continue
-
+                    image = Image.open(io.BytesIO(image_data))
                 except Exception as img_error:
                     logger.warning(
                         f"Erreur lors du traitement de l'image pour {doc.metadata.get('source_file', 'inconnu')}: {img_error}"
@@ -316,9 +230,7 @@ class MLXEmbeddingService:
             # Le modèle attend un prompt textuel + une image
             inputs = self.processor(
                 text=[self.document_prompt],  # Prompt pour l'encodage d'image
-                images=[
-                    self._resize_image(image)
-                ],  # Image redimensionnée selon les contraintes
+                images=[image],  # Image déjà optimisée par document_processor
                 videos=None,  # Pas de vidéo pour ce modèle
                 padding="longest",  # Padding pour gérer les tailles variables
                 return_tensors="pt",  # Retourner des tenseurs PyTorch
@@ -435,6 +347,50 @@ class MLXEmbeddingService:
             # Fallback : retourner un vecteur zéro en cas d'erreur
             # Cela permet au système de continuer à fonctionner même en cas de problème
             return [0.0] * self.dimension
+
+
+class LangChainMLXEmbeddings(Embeddings):
+    """
+    Wrapper pour MLXEmbeddingService compatible avec l'interface LangChain Embeddings.
+    
+    Cette classe permet d'utiliser MLXEmbeddingService avec les vector stores LangChain
+    en implémentant l'interface standard Embeddings.
+    """
+    
+    def __init__(self, mlx_service: MLXEmbeddingService):
+        """
+        Initialise le wrapper avec un service MLX.
+        
+        Args:
+            mlx_service: Instance de MLXEmbeddingService
+        """
+        self.mlx_service = mlx_service
+    
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """
+        Génère des embeddings pour une liste de textes.
+        
+        Args:
+            texts: Liste de textes à embedder
+            
+        Returns:
+            Liste d'embeddings (vecteurs de 1536 dimensions)
+        """
+        # Créer des documents LangChain temporaires
+        documents = [Document(page_content=text, metadata={}) for text in texts]
+        return self.mlx_service.embed_documents(documents)
+    
+    def embed_query(self, text: str) -> List[float]:
+        """
+        Génère un embedding pour une requête.
+        
+        Args:
+            text: Texte de la requête
+            
+        Returns:
+            Embedding (vecteur de 1536 dimensions)
+        """
+        return self.mlx_service.embed_query(text)
 
 
 # =============================================================================

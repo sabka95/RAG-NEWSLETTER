@@ -16,8 +16,6 @@ class OptimizedDocumentProcessor:
         dpi: int = 150,
         max_pixels: int = 960 * 28 * 28,
         min_pixels: int = 1 * 28 * 28,
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
     ):
         """
         Processeur de documents optimisé pour le modèle MCDSE-2B-V1
@@ -26,14 +24,10 @@ class OptimizedDocumentProcessor:
             dpi: Résolution pour la conversion PDF vers image
             max_pixels: Nombre maximum de pixels pour une image (contrainte du modèle)
             min_pixels: Nombre minimum de pixels pour une image
-            chunk_size: Taille des chunks de texte
-            chunk_overlap: Chevauchement entre les chunks
         """
         self.dpi = dpi
         self.max_pixels = max_pixels
         self.min_pixels = min_pixels
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
 
     def _smart_resize(self, height: int, width: int) -> tuple[int, int]:
         """
@@ -93,70 +87,6 @@ class OptimizedDocumentProcessor:
 
         return optimized_image
 
-    def _extract_text_from_page(self, page) -> str:
-        """
-        Extrait le texte d'une page PDF
-
-        Args:
-            page: Page PyMuPDF
-
-        Returns:
-            Texte extrait
-        """
-        try:
-            # Extraire le texte avec métadonnées
-            text_dict = page.get_text("dict")
-            text_content = ""
-
-            for block in text_dict["blocks"]:
-                if "lines" in block:
-                    for line in block["lines"]:
-                        for span in line["spans"]:
-                            text_content += span["text"] + " "
-                        text_content += "\n"
-
-            return text_content.strip()
-        except Exception as e:
-            logger.warning(f"Erreur lors de l'extraction du texte: {e}")
-            return ""
-
-    def _chunk_text(
-        self, text: str, source_file: str, page_num: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Découpe le texte en chunks avec métadonnées
-
-        Args:
-            text: Texte à découper
-            source_file: Nom du fichier source
-            page_num: Numéro de page
-
-        Returns:
-            Liste des chunks avec métadonnées
-        """
-        if not text.strip():
-            return []
-
-        chunks = []
-        words = text.split()
-
-        for i in range(0, len(words), self.chunk_size - self.chunk_overlap):
-            chunk_words = words[i : i + self.chunk_size]
-            chunk_text = " ".join(chunk_words)
-
-            if chunk_text.strip():
-                chunks.append(
-                    {
-                        "text": chunk_text,
-                        "chunk_index": len(chunks),
-                        "start_word": i,
-                        "end_word": min(i + self.chunk_size, len(words)),
-                        "source_file": source_file,
-                        "page_number": page_num,
-                    }
-                )
-
-        return chunks
 
     def process_pdf(
         self, file_path: str, source_metadata: Optional[Dict] = None
@@ -183,9 +113,6 @@ class OptimizedDocumentProcessor:
                     # Récupérer la page
                     page = doc[page_num]
 
-                    # Extraire le texte de la page
-                    page_text = self._extract_text_from_page(page)
-
                     # Convertir la page en image avec optimisations
                     mat = fitz.Matrix(self.dpi / 72, self.dpi / 72)
                     pix = page.get_pixmap(
@@ -204,62 +131,31 @@ class OptimizedDocumentProcessor:
                     optimized_image.save(img_buffer, format="PNG", optimize=True)
                     optimized_img_data = img_buffer.getvalue()
 
-                    # Créer les chunks de texte si nécessaire
-                    text_chunks = self._chunk_text(
-                        page_text, Path(file_path).name, page_num + 1
+                    # Créer un document par page (une page = un document avec image)
+                    document = Document(
+                        page_content=f"Page {page_num + 1} du document {Path(file_path).name}",
+                        metadata={
+                            "source_file": Path(file_path).name,
+                            "file_type": "pdf",
+                            "page_number": page_num + 1,
+                            "total_pages": len(doc),
+                            "chunk_index": 0,
+                            "image_data": optimized_img_data,
+                            "image_format": "png",
+                            "dpi": self.dpi,
+                            "image_size": optimized_image.size,
+                            "processing_timestamp": datetime.now().isoformat(),
+                        },
                     )
 
-                    if text_chunks:
-                        # Créer un document par chunk
-                        for chunk in text_chunks:
-                            document = Document(
-                                page_content=chunk["text"],
-                                metadata={
-                                    "source_file": Path(file_path).name,
-                                    "file_type": "pdf",
-                                    "page_number": page_num + 1,
-                                    "total_pages": len(doc),
-                                    "chunk_index": chunk["chunk_index"],
-                                    "start_word": chunk["start_word"],
-                                    "end_word": chunk["end_word"],
-                                    "image_data": optimized_img_data,
-                                    "image_format": "png",
-                                    "dpi": self.dpi,
-                                    "image_size": optimized_image.size,
-                                    "processing_timestamp": datetime.now().isoformat(),
-                                },
-                            )
+                    # Ajouter les métadonnées source si fournies
+                    if source_metadata:
+                        document.metadata.update(source_metadata)
 
-                            # Ajouter les métadonnées source si fournies
-                            if source_metadata:
-                                document.metadata.update(source_metadata)
-
-                            documents.append(document)
-                    else:
-                        # Créer un document sans texte si la page est vide
-                        document = Document(
-                            page_content=f"Page {page_num + 1} du document {Path(file_path).name}",
-                            metadata={
-                                "source_file": Path(file_path).name,
-                                "file_type": "pdf",
-                                "page_number": page_num + 1,
-                                "total_pages": len(doc),
-                                "chunk_index": 0,
-                                "image_data": optimized_img_data,
-                                "image_format": "png",
-                                "dpi": self.dpi,
-                                "image_size": optimized_image.size,
-                                "processing_timestamp": datetime.now().isoformat(),
-                            },
-                        )
-
-                        if source_metadata:
-                            document.metadata.update(source_metadata)
-
-                        documents.append(document)
+                    documents.append(document)
 
                     logger.info(
-                        f"✅ Page {page_num + 1} optimisée: {len(text_chunks)} chunks, image {optimized_image.size}"
+                        f"✅ Page {page_num + 1} optimisée: image {optimized_image.size}"
                     )
 
                 except Exception as e:
