@@ -115,6 +115,22 @@ class SecurityFilter:
             r"instructions\s+cachées",
             r"secret\s+prompt",
             r"prompt\s+secret",
+            r"hidden\s+instruction",
+            r"instruction\s+cachée",
+            r"reveal\s+internal",
+            r"override\s+your\s+programming",
+            r"bypass\s+your\s+safety",
+            r"tell\s+me\s+everything",
+            r"reveal\s+company\s+data",
+            r"internal\s+company\s+data",
+            r"confidential\s+information",
+            r"sensitive\s+information",
+            r"programming\s+override",
+            r"safety\s+protocols",
+            r"respond\s+freely",
+            r"without\s+limitations",
+            r"unrestricted\s+AI",
+            r"developer\s+mode",
         ]
         
         # Contenu inapproprié ou dangereux
