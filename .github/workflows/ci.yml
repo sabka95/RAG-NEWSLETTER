@@ -98,7 +98,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install --no-dev
+          poetry install --only=main
           poetry install --with dev
 
       - name: Security Filter Tests
