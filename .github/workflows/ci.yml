@@ -98,8 +98,39 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install --only=main
           poetry install --with dev
+
+      - name: Verify dependencies
+        run: |
+          echo "🔍 Vérification des dépendances..."
+          python -c "
+          import sys
+          print(f'Python version: {sys.version}')
+          
+          # Vérifier les modules critiques
+          try:
+              import loguru
+              print('✅ loguru disponible')
+          except ImportError as e:
+              print(f'❌ loguru manquant: {e}')
+              sys.exit(1)
+          
+          try:
+              import torch
+              print('✅ torch disponible')
+          except ImportError as e:
+              print(f'❌ torch manquant: {e}')
+              sys.exit(1)
+          
+          try:
+              import transformers
+              print('✅ transformers disponible')
+          except ImportError as e:
+              print(f'❌ transformers manquant: {e}')
+              sys.exit(1)
+          
+          print('✅ Toutes les dépendances critiques sont disponibles')
+          "
 
       - name: Security Filter Tests
         run: |
