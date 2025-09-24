@@ -22,23 +22,16 @@ except ImportError:
     OLLAMA_AVAILABLE = False
     logger.warning("⚠️ Ollama non disponible pour la détection LLM")
 
-try:
-    import guardrails
-    GUARDRAILS_AVAILABLE = True
-except ImportError:
-    GUARDRAILS_AVAILABLE = False
-    logger.warning("⚠️ Guardrails AI non disponible")
+# Guardrails AI temporairement désactivé (incompatible avec LangChain 0.3+)
+GUARDRAILS_AVAILABLE = False
+logger.info("⚠️ Guardrails AI temporairement désactivé")
 
 # Rebuff non disponible - utilisation d'alternatives
 REBUFF_AVAILABLE = False
 
-try:
-    from art.attacks.evasion import FastGradientMethod
-    from art.estimators.classification import PyTorchClassifier
-    ART_AVAILABLE = True
-except ImportError:
-    ART_AVAILABLE = False
-    logger.warning("⚠️ Adversarial Robustness Toolbox non disponible")
+# ART temporairement désactivé pour simplifier les dépendances
+ART_AVAILABLE = False
+logger.info("⚠️ Adversarial Robustness Toolbox temporairement désactivé")
 
 
 class SecurityFilter:
