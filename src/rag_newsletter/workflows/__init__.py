@@ -1,11 +1,11 @@
 from .security_filter import SecurityFilter
-from .llm_intent_analyzer import LLMIntentAnalyzer, QueryIntent
+from .advanced_intent_analyzer import AdvancedIntentAnalyzer, QueryIntent
 from .llm_response_generator import LLMResponseGenerator
 from .rag_workflow import RAGWorkflow, RAGState
 
 __all__ = [
     "SecurityFilter",
-    "LLMIntentAnalyzer",
+    "AdvancedIntentAnalyzer",
     "QueryIntent",
     "LLMResponseGenerator",
     "RAGWorkflow",
