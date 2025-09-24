@@ -244,7 +244,7 @@ def initialize_session_state():
         st.session_state.rag_service = None
     
     if 'model_name' not in st.session_state:
-        st.session_state.model_name = "mistral:7b"
+        st.session_state.model_name = "llama3.1:8b"
     
     # Suppression du mode comparaison - détection automatique par LLM
     
@@ -283,6 +283,8 @@ def render_sidebar():
         # Modèle LLM
         st.subheader("🧠 Modèle LLM")
         model_options = {
+            "Llama 3.1 8B": "llama3.1:8b",
+            "Llama 3.1 7B": "llama3.1:7b",
             "Mistral 7B": "mistral:7b",
             "Mistral 7B Instruct": "mistral:7b-instruct",
             "Llama 2 7B": "llama2:7b",

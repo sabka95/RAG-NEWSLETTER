@@ -12,7 +12,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
 
 from .security_filter import SecurityFilter
-from .llm_intent_analyzer import LLMIntentAnalyzer, QueryIntent
+from .advanced_intent_analyzer import AdvancedIntentAnalyzer, QueryIntent
 from .llm_response_generator import LLMResponseGenerator
 
 
@@ -57,14 +57,14 @@ class RAGWorkflow:
     - LLMResponseGenerator : Génération de réponses avec Mistral 7B
     """
     
-    def __init__(self, rag_service, max_retries: int = 3, llm_model: str = "mistral:7b"):
+    def __init__(self, rag_service, max_retries: int = 3, llm_model: str = "llama3.1:8b"):
         """
-        Initialise le workflow RAG avec LLM.
+        Initialise le workflow RAG avec LLM avancé.
         
         Args:
             rag_service: Service RAG existant
             max_retries (int): Nombre maximum de tentatives
-            llm_model (str): Modèle LLM à utiliser
+            llm_model (str): Modèle LLM à utiliser (défaut: llama3.1:8b)
         """
         self.rag_service = rag_service
         self.max_retries = max_retries
@@ -72,7 +72,11 @@ class RAGWorkflow:
         
         # Initialiser les composants
         self.security_filter = SecurityFilter()
-        self.intent_analyzer = LLMIntentAnalyzer(model=llm_model, fallback_to_regex=True)
+        self.intent_analyzer = AdvancedIntentAnalyzer(
+            llm_model=llm_model,
+            enable_snorkel=True,
+            enable_robustness_testing=True
+        )
         self.response_generator = LLMResponseGenerator(model=llm_model, fallback_to_basic=True)
         
         # Créer le workflow
