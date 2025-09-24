@@ -230,10 +230,21 @@ class OptimizedRAGIngestionService:
         try:
             logger.info(f"📋 Recherche limitée aux documents: {document_names}")
 
-            # Créer un filtre pour les documents spécifiques
-            filter_dict = {"source_file": document_names}
+            # Rechercher dans chaque document individuellement
+            all_results = []
+            for doc_name in document_names:
+                # Créer un filtre pour un document spécifique
+                filter_dict = {"source_file": doc_name}
+                
+                # Recherche dans ce document
+                doc_results = self.search(query=query, k=k, filter=filter_dict)
+                all_results.extend(doc_results)
+                
+                logger.info(f"📄 {doc_name}: {len(doc_results)} résultats")
 
-            return self.search(query=query, k=k, filter=filter_dict)
+            # Trier par score et limiter
+            all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+            return all_results[:k]
 
         except Exception as e:
             logger.error(f"❌ Erreur lors de la recherche filtrée: {e}")
