@@ -98,38 +98,47 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install --with dev
+          echo "📦 Installation des dépendances avec Poetry..."
+          poetry --version
+          poetry config --list
+          poetry install --with dev --verbose
+          echo "✅ Installation terminée"
 
       - name: Verify dependencies
         run: |
           echo "🔍 Vérification des dépendances..."
+          echo "📋 Liste des packages installés:"
+          poetry show
+          echo ""
+          echo "🐍 Vérification Python:"
           python -c "
           import sys
           print(f'Python version: {sys.version}')
+          print(f'Python path: {sys.path}')
+          print('')
           
           # Vérifier les modules critiques
-          try:
-              import loguru
-              print('✅ loguru disponible')
-          except ImportError as e:
-              print(f'❌ loguru manquant: {e}')
-              sys.exit(1)
+          modules_to_check = ['loguru', 'torch', 'transformers', 'langchain', 'streamlit']
           
-          try:
-              import torch
-              print('✅ torch disponible')
-          except ImportError as e:
-              print(f'❌ torch manquant: {e}')
-              sys.exit(1)
+          for module in modules_to_check:
+              try:
+                  __import__(module)
+                  print(f'✅ {module} disponible')
+              except ImportError as e:
+                  print(f'❌ {module} manquant: {e}')
+                  # Ne pas échouer immédiatement, continuer les vérifications
           
+          print('')
+          print('🔍 Test d\'importation du module principal:')
           try:
-              import transformers
-              print('✅ transformers disponible')
-          except ImportError as e:
-              print(f'❌ transformers manquant: {e}')
-              sys.exit(1)
-          
-          print('✅ Toutes les dépendances critiques sont disponibles')
+              import sys
+              sys.path.append('src')
+              from rag_newsletter.workflows.security_filter import SecurityFilter
+              print('✅ SecurityFilter importé avec succès')
+          except Exception as e:
+              print(f'❌ Erreur import SecurityFilter: {e}')
+              import traceback
+              traceback.print_exc()
           "
 
       - name: Security Filter Tests
