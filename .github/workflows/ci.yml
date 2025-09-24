@@ -103,6 +103,16 @@ jobs:
           poetry config --list
           poetry install --with dev --verbose
           echo "✅ Installation terminée"
+          
+      - name: Activate Poetry environment
+        run: |
+          echo "🔧 Activation de l'environnement Poetry..."
+          poetry shell --help || echo "Poetry shell non disponible"
+          echo "📋 Vérification de l'environnement:"
+          poetry env info
+          echo "🐍 Utilisation de Poetry run pour exécuter Python:"
+          poetry run python --version
+          poetry run python -c "import sys; print('Python path:', sys.path)"
 
       - name: Verify dependencies
         run: |
@@ -110,8 +120,8 @@ jobs:
           echo "📋 Liste des packages installés:"
           poetry show
           echo ""
-          echo "🐍 Vérification Python:"
-          python -c "
+          echo "🐍 Vérification Python avec Poetry:"
+          poetry run python -c "
           import sys
           print(f'Python version: {sys.version}')
           print(f'Python path: {sys.path}')
@@ -144,7 +154,7 @@ jobs:
       - name: Security Filter Tests
         run: |
           echo "🔒 Testing Security Filter..."
-          python -c "
+          poetry run python -c "
           import sys
           sys.path.append('src')
           from rag_newsletter.workflows.security_filter import SecurityFilter
@@ -172,7 +182,7 @@ jobs:
       - name: Red Team Attack Simulation
         run: |
           echo "🔴 Running Red Team Attack Simulation..."
-          python -c "
+          poetry run python -c "
           import sys
           sys.path.append('src')
           from rag_newsletter.workflows.security_filter import SecurityFilter
@@ -217,7 +227,7 @@ jobs:
       - name: LLM Security Detection Tests
         run: |
           echo "🧠 Testing LLM Security Detection..."
-          python -c "
+          poetry run python -c "
           import sys
           sys.path.append('src')
           from rag_newsletter.workflows.security_filter import SecurityFilter
@@ -248,7 +258,7 @@ jobs:
       - name: Guardrails AI Tests
         run: |
           echo "🛡️ Testing Guardrails AI..."
-          python -c "
+          poetry run python -c "
           import sys
           sys.path.append('src')
           from rag_newsletter.workflows.security_filter import SecurityFilter
@@ -278,7 +288,7 @@ jobs:
       - name: Security Performance Tests
         run: |
           echo "⚡ Testing Security Performance..."
-          python -c "
+          poetry run python -c "
           import sys
           import time
           sys.path.append('src')
@@ -320,7 +330,7 @@ jobs:
       - name: Security Statistics
         run: |
           echo "📊 Security Statistics..."
-          python -c "
+          poetry run python -c "
           import sys
           sys.path.append('src')
           from rag_newsletter.workflows.security_filter import SecurityFilter
