@@ -18,13 +18,15 @@ requests = "^2.32.5"
 pydantic-settings = "^2.10.1"
 python-dotenv = "^1.1.1"
 
-# MLX and ML Framework (optimized for Apple Silicon)
-mlx = "^0.19.0"
-mlx-lm = "^0.19.0"
+# ML Framework (cross-platform)
 torch = "^2.5.0"
 torchvision = "^0.20.0"
 transformers = "^4.47.0"
 accelerate = "^0.30.0"
+sentence-transformers = "^2.2.0"
+# MLX (Apple Silicon only - optional)
+mlx = {version = "^0.19.0", optional = true}
+mlx-lm = {version = "^0.19.0", optional = true}
 
 # Document Processing
 pymupdf = "^1.23.0"
@@ -57,6 +59,10 @@ rank-bm25 = "^0.2.2"
 # Security Framework
 guardrails-ai = "^0.4.0"
 adversarial-robustness-toolbox = "^1.15.0"
+
+[tool.poetry.extras]
+apple = ["mlx", "mlx-lm"]
+dev = ["pytest", "pytest-asyncio", "pytest-cov", "black", "isort", "flake8", "mypy"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

@@ -2256,9 +2256,10 @@ files = [
 name = "mlx"
 version = "0.19.3"
 description = "A framework for machine learning on Apple silicon."
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"apple\""
 files = [
     {file = "mlx-0.19.3-cp310-cp310-macosx_13_0_arm64.whl", hash = "sha256:9e9ccd7145661462910f2aa8c3028c8d23bd031d623cc79352da7a1e81ae09ab"},
     {file = "mlx-0.19.3-cp310-cp310-macosx_14_0_arm64.whl", hash = "sha256:3cd6cb6206fe1e6e237aa9df96f7000dcc44f07fb2d116005e5f8e43a3ab3ee5"},
@@ -2279,9 +2280,10 @@ dev = ["nanobind (==2.2.0)", "numpy", "pre-commit", "setuptools (>=42)", "torch"
 name = "mlx-lm"
 version = "0.19.3"
 description = "LLMs on Apple silicon with MLX and the Hugging Face Hub"
-optional = false
+optional = true
 python-versions = ">=3.8"
 groups = ["main"]
+markers = "extra == \"apple\""
 files = [
     {file = "mlx_lm-0.19.3-py3-none-any.whl", hash = "sha256:d59b92676b89c8c7dbffdce2c4214d67557a031989034752ae37e9f047f4c1fa"},
     {file = "mlx_lm-0.19.3.tar.gz", hash = "sha256:1d2b2f26f6262f4b8eb816d2c39b9ecbe6d0334bde0e6b5db141e101a8e94a34"},
@@ -4783,9 +4785,10 @@ test = ["Cython", "array-api-strict (>=2.3.1)", "asv", "gmpy2", "hypothesis (>=6
 name = "sentencepiece"
 version = "0.2.1"
 description = "Unsupervised text tokenizer and detokenizer."
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"apple\""
 files = [
     {file = "sentencepiece-0.2.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:e10fa50bdbaa5e2445dbd387979980d391760faf0ec99a09bd7780ff37eaec44"},
     {file = "sentencepiece-0.2.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:2f27ae6deea72efdb6f361750c92f6c21fd0ad087445082770cc34015213c526"},
@@ -5808,7 +5811,11 @@ docs = ["Sphinx", "furo", "repoze.sphinx.autointerface"]
 test = ["coverage[toml]", "zope.event", "zope.testing"]
 testing = ["coverage[toml]", "zope.event", "zope.testing"]
 
+[extras]
+apple = ["mlx", "mlx-lm"]
+dev = []
+
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.12"
-content-hash = "c048a776a53e60d52fb5d6714fdf3acd5419485add11451649b05e2d6aa9f39b"
+content-hash = "62fb1b3ee365284c390db7558f67f5d95c8c9256e31cdc530d67905a702daf51"

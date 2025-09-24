@@ -6,6 +6,7 @@
 # =============================================================================
 
 import io
+import platform
 from typing import List
 
 import torch
@@ -14,6 +15,10 @@ from langchain.embeddings.base import Embeddings
 from loguru import logger
 from PIL import Image
 from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
+
+# Détection de la plateforme
+IS_APPLE_SILICON = platform.system() == "Darwin" and platform.machine() == "arm64"
+IS_LINUX = platform.system() == "Linux"
 
 
 class MLXEmbeddingService:
@@ -391,6 +396,85 @@ class LangChainMLXEmbeddings(Embeddings):
             Embedding (vecteur de 1536 dimensions)
         """
         return self.mlx_service.embed_query(text)
+
+
+class LinuxEmbeddingService:
+    """
+    Service d'embeddings alternatif pour Linux utilisant sentence-transformers.
+    
+    Cette classe fournit des embeddings de qualité similaire à MLX mais compatible
+    avec les environnements Linux, notamment dans les pipelines CI/CD.
+    """
+    
+    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2", dimension: int = 384):
+        """
+        Initialise le service d'embeddings pour Linux.
+        
+        Args:
+            model_name: Nom du modèle sentence-transformers à utiliser
+            dimension: Dimension des embeddings de sortie
+        """
+        self.model_name = model_name
+        self.dimension = dimension
+        self.model = None
+        self._initialize_model()
+    
+    def _initialize_model(self):
+        """Initialise le modèle sentence-transformers."""
+        try:
+            from sentence_transformers import SentenceTransformer
+            logger.info(f"Chargement du modèle sentence-transformers: {self.model_name}")
+            self.model = SentenceTransformer(self.model_name)
+            logger.info("✅ Modèle sentence-transformers chargé avec succès!")
+        except ImportError:
+            logger.warning("⚠️ sentence-transformers non disponible, utilisation d'un fallback")
+            self.model = None
+        except Exception as e:
+            logger.error(f"❌ Erreur lors du chargement du modèle: {e}")
+            self.model = None
+    
+    def embed_documents(self, documents: List[Document]) -> List[List[float]]:
+        """Génère les embeddings pour une liste de documents."""
+        if not self.model:
+            # Fallback: retourner des embeddings aléatoires
+            logger.warning("⚠️ Modèle non disponible, utilisation d'embeddings aléatoires")
+            return [[0.0] * self.dimension for _ in documents]
+        
+        try:
+            texts = [doc.page_content for doc in documents]
+            embeddings = self.model.encode(texts)
+            return embeddings.tolist()
+        except Exception as e:
+            logger.error(f"Erreur lors de la génération des embeddings: {e}")
+            return [[0.0] * self.dimension for _ in documents]
+    
+    def embed_query(self, query: str) -> List[float]:
+        """Génère l'embedding pour une requête textuelle."""
+        if not self.model:
+            logger.warning("⚠️ Modèle non disponible, utilisation d'un embedding zéro")
+            return [0.0] * self.dimension
+        
+        try:
+            embedding = self.model.encode([query])
+            return embedding[0].tolist()
+        except Exception as e:
+            logger.error(f"Erreur lors de la génération de l'embedding de requête: {e}")
+            return [0.0] * self.dimension
+
+
+def get_embedding_service():
+    """
+    Retourne le service d'embeddings approprié selon la plateforme.
+    
+    Returns:
+        Service d'embeddings optimisé pour la plateforme actuelle
+    """
+    if IS_APPLE_SILICON:
+        logger.info("🍎 Détection Apple Silicon - Utilisation de MLXEmbeddingService")
+        return MLXEmbeddingService()
+    else:
+        logger.info("🐧 Détection Linux/autre - Utilisation de LinuxEmbeddingService")
+        return LinuxEmbeddingService()
 
 
 # =============================================================================
