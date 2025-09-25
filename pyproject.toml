@@ -64,6 +64,7 @@ rank-bm25 = "^0.2.2"
 # Security Framework (simplified)
 # guardrails-ai = "^0.4.0"  # Incompatible with LangChain 0.3+
 # adversarial-robustness-toolbox = "^1.15.0"  # Optional for now
+guardrails-ai = "^0.6.7"
 
 [tool.poetry.extras]
 apple = ["mlx", "mlx-lm"]

@@ -77,7 +77,6 @@ curl -fsSL https://ollama.ai/install.sh | sh
 # 3. Télécharger les modèles LLM
 ollama pull llama3.1:8b
 ollama pull llama3.1:7b
-ollama pull mistral:7b
 
 # 4. Télécharger les modèles Sentence-BERT
 poetry run python -c "

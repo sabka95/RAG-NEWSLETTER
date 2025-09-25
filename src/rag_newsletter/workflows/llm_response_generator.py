@@ -1,7 +1,7 @@
 """
-Générateur de réponses LLM (Mistral 7B local).
+Générateur de réponses LLM (Llama 3.1 8B local).
 
-Ce module utilise Mistral 7B via Ollama pour générer des réponses intelligentes
+Ce module utilise Llama 3.1 8B via Ollama pour générer des réponses intelligentes
 et cohérentes basées sur les documents récupérés et l'intention détectée.
 """
 
@@ -20,11 +20,11 @@ except ImportError:
 
 class LLMResponseGenerator:
     """
-    Générateur de réponses utilisant Mistral 7B pour reformuler intelligemment
+    Générateur de réponses utilisant Llama 3.1 8B pour reformuler intelligemment
     les contextes récupérés en réponses cohérentes et naturelles.
     """
     
-    def __init__(self, model: str = "mistral:7b", fallback_to_basic: bool = True):
+    def __init__(self, model: str = "llama3.1:8b", fallback_to_basic: bool = True):
         """
         Initialise le générateur LLM.
         
@@ -84,13 +84,13 @@ class LLMResponseGenerator:
             return self._generate_error_response(query, documents, intent, confidence)
     
     def _generate_with_llm(self, query: str, documents: List[Dict], intent: str, confidence: float) -> Dict[str, Any]:
-        """Génère une réponse en utilisant Mistral 7B."""
+        """Génère une réponse en utilisant Llama 3.1 8B."""
         logger.info(f"🤖 Génération LLM de: '{query[:50]}...'")
         
         # Construire le prompt selon l'intention
         prompt = self._build_response_prompt(query, documents, intent)
         
-        # Appeler Mistral 7B
+        # Appeler Llama 3.1 8B
         start_time = time.time()
         response = ollama.generate(
             model=self.model,
@@ -112,7 +112,7 @@ class LLMResponseGenerator:
             "citations": citations,
             "confidence": confidence,
             "intent": intent,
-            "provider": "mistral_7b",
+            "provider": "llama3.1_8b",
             "model": self.model,
             "generation_time": llm_time,
             "method": "llm"

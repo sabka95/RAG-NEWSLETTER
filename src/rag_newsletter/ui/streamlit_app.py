@@ -210,7 +210,7 @@ def initialize_rag_service():
         return None
 
 @st.cache_resource
-def initialize_workflow(_rag_service, model_name: str = "mistral:7b"):
+def initialize_workflow(_rag_service, model_name: str = "llama3.1:8b"):
     """Initialise le workflow RAG avec cache."""
     try:
         logger.info(f"🧠 Initialisation du workflow RAG avec modèle: {model_name}")
@@ -285,8 +285,6 @@ def render_sidebar():
         model_options = {
             "Llama 3.1 8B": "llama3.1:8b",
             "Llama 3.1 7B": "llama3.1:7b",
-            "Mistral 7B": "mistral:7b",
-            "Mistral 7B Instruct": "mistral:7b-instruct",
             "Llama 2 7B": "llama2:7b",
             "Code Llama 7B": "codellama:7b"
         }
@@ -768,7 +766,7 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 1rem;">
-        🤖 Chatbot RAG TotalEnergies | Powered by Mistral 7B & LangGraph | 
+        🤖 Chatbot RAG TotalEnergies | Powered by Llama 3.1 8B & LangGraph | 
         <a href="https://github.com/your-repo" target="_blank">GitHub</a>
     </div>
     """, unsafe_allow_html=True)

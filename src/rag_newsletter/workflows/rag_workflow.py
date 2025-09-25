@@ -1,8 +1,8 @@
 """
-Workflow RAG avec LLM (Mistral 7B) pour une vraie compréhension sémantique.
+Workflow RAG avec LLM (Llama 3.1 8B) pour une vraie compréhension sémantique.
 
 Ce module remplace l'analyse par regex par une compréhension intelligente
-utilisant Mistral 7B via Ollama pour l'analyse d'intention et la génération de réponses.
+utilisant Llama 3.1 8B via Ollama pour l'analyse d'intention et la génération de réponses.
 """
 
 import time
@@ -50,11 +50,11 @@ class RAGState(TypedDict):
 
 class RAGWorkflow:
     """
-    Workflow RAG avec LLM (Mistral 7B) pour une compréhension sémantique intelligente.
+    Workflow RAG avec LLM (Llama 3.1 8B) pour une compréhension sémantique intelligente.
     
     Remplace l'analyse par regex par une vraie compréhension utilisant :
-    - LLMIntentAnalyzer : Analyse d'intention avec Mistral 7B
-    - LLMResponseGenerator : Génération de réponses avec Mistral 7B
+    - LLMIntentAnalyzer : Analyse d'intention avec Llama 3.1 8B
+    - LLMResponseGenerator : Génération de réponses avec Llama 3.1 8B
     """
     
     def __init__(self, rag_service, max_retries: int = 3, llm_model: str = "llama3.1:8b"):
