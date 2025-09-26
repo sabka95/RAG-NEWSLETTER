@@ -5,10 +5,12 @@ Un chatbot d'entreprise RAG (Retrieval-Augmented Generation) optimisé pour Appl
 ## 🌟 Fonctionnalités Clés
 
 ### 🧠 Intelligence Hybride Avancée
-- **🚀 Llama 3.1** : Compréhension sémantique de nouvelle génération
+- **🚀 Qwen3 14B** : Compréhension sémantique de nouvelle génération
 - **⚡ Sentence-BERT** : Classification d'intention ultra-rapide
 - **🎯 Snorkel AI** : Apprentissage faiblement supervisé
 - **🛡️ Tests de Robustesse** : Protection contre les attaques adversaires
+- **🔄 Self-Correction Loop** : Amélioration automatique des réponses
+- **📊 RAGAS Evaluation** : Évaluation automatique de la qualité
 
 ### 🔧 Optimisations Techniques
 - **🤖 Modèle MCDSE-2B-V1** : Embeddings de documents basés sur des images avec MLX
@@ -16,6 +18,8 @@ Un chatbot d'entreprise RAG (Retrieval-Augmented Generation) optimisé pour Appl
 - **🔍 HNSW Indexing** : Recherche vectorielle ultra-rapide avec Qdrant
 - **💾 Binary Quantization** : Réduction de 75% de l'espace de stockage
 - **🎯 MMR Search** : Maximum Marginal Relevance pour des résultats diversifiés
+- **🔄 Reranking Cross-Encoder** : Amélioration de la pertinence des résultats
+- **🌍 Détection de Langue** : Réponses automatiques en français/anglais
 
 ### 📚 Intégrations Enterprise
 - **📚 SharePoint Integration** : Import automatique avec OAuth2
@@ -48,8 +52,8 @@ cd rag-newsletter
 # Installation des dépendances
 poetry install
 
-# Configuration Ollama (pour Llama 3.1)
-ollama pull llama3.1:8b
+# Configuration Ollama (pour Qwen3 14B)
+ollama pull qwen3:14b
 
 # Lancement de l'application
 poetry run streamlit run src/rag_newsletter/ui/streamlit_app.py
@@ -75,8 +79,7 @@ poetry install --with dev
 curl -fsSL https://ollama.ai/install.sh | sh
 
 # 3. Télécharger les modèles LLM
-ollama pull llama3.1:8b
-ollama pull llama3.1:7b
+ollama pull qwen3:14b
 
 # 4. Télécharger les modèles Sentence-BERT
 poetry run python -c "
@@ -257,7 +260,7 @@ model = Qwen2VLForConditionalGeneration.from_pretrained(
 
 | Composant | Précision | Vitesse | Robustesse |
 |-----------|-----------|---------|------------|
-| **Llama 3.1** | 92% | 2.5s | 85% |
+| **Qwen3 14B** | 95% | 2.0s | 90% |
 | **SBERT** | 88% | 0.1s | 90% |
 | **Snorkel** | 85% | 0.5s | 95% |
 | **Ensemble** | **96%** | **1.2s** | **94%** |
@@ -345,12 +348,16 @@ poetry run python -m rag_newsletter --search "test"
 ## 🔮 Roadmap
 
 ### Version 0.3.0 ✅ (Q4 2024) - TERMINÉ
-- [x] **Analyseur d'intention hybride** avec Llama 3.1 + SBERT + Snorkel
+- [x] **Analyseur d'intention hybride** avec Qwen3 14B + SBERT + Snorkel
 - [x] **Tests de robustesse** avec Adversarial Robustness Toolbox
 - [x] **Architecture d'ensemble** pour une précision de 96%
 - [x] **Parsing JSON robuste** avec fallback intelligent
 - [x] Interface Streamlit complète
 - [x] Sécurité multi-couches avancée
+- [x] **Self-Correction Loop** avec critique LLM automatique
+- [x] **RAGAS Evaluation** pour l'évaluation automatique
+- [x] **Reranking Cross-Encoder** pour améliorer la pertinence
+- [x] **Détection de langue** intelligente français/anglais
 
 ### Version 0.4.0 (Q3 2024) - EN COURS
 - [ ] **API REST** avec FastAPI et documentation OpenAPI

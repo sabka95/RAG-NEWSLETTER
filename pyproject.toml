@@ -53,6 +53,10 @@ ollama = "^0.5.4"
 snorkel = "^0.9.0"
 adversarial-robustness-toolbox = "^1.15.0"
 
+# RAG Evaluation
+ragas = "^0.1.0"
+deepeval = "^0.20.0"
+
 # UI Framework
 streamlit = "^1.28.0"
 plotly = "^5.15.0"
@@ -65,6 +69,7 @@ rank-bm25 = "^0.2.2"
 # guardrails-ai = "^0.4.0"  # Incompatible with LangChain 0.3+
 # adversarial-robustness-toolbox = "^1.15.0"  # Optional for now
 guardrails-ai = "^0.6.7"
+psutil = "^7.1.0"
 
 [tool.poetry.extras]
 apple = ["mlx", "mlx-lm"]

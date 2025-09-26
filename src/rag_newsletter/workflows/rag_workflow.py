@@ -50,21 +50,21 @@ class RAGState(TypedDict):
 
 class RAGWorkflow:
     """
-    Workflow RAG avec LLM (Llama 3.1 8B) pour une compréhension sémantique intelligente.
+    Workflow RAG avec LLM (Qwen3 14B) pour une compréhension sémantique intelligente.
     
     Remplace l'analyse par regex par une vraie compréhension utilisant :
-    - LLMIntentAnalyzer : Analyse d'intention avec Llama 3.1 8B
-    - LLMResponseGenerator : Génération de réponses avec Llama 3.1 8B
+    - LLMIntentAnalyzer : Analyse d'intention avec Qwen3 14B
+    - LLMResponseGenerator : Génération de réponses avec Qwen3 14B
     """
     
-    def __init__(self, rag_service, max_retries: int = 3, llm_model: str = "llama3.1:8b"):
+    def __init__(self, rag_service, max_retries: int = 3, llm_model: str = "qwen3:14b"):
         """
         Initialise le workflow RAG avec LLM avancé.
         
         Args:
             rag_service: Service RAG existant
             max_retries (int): Nombre maximum de tentatives
-            llm_model (str): Modèle LLM à utiliser (défaut: llama3.1:8b)
+            llm_model (str): Modèle LLM à utiliser (défaut: qwen3:14b)
         """
         self.rag_service = rag_service
         self.max_retries = max_retries
@@ -82,7 +82,7 @@ class RAGWorkflow:
         # Créer le workflow
         self.workflow = self._create_workflow()
         
-        logger.info(f"🚀 Workflow RAG avec LLM initialisé: {llm_model}")
+        logger.info(f"🚀 Workflow RAG avec Qwen3 14B initialisé: {llm_model}")
     
     def _create_workflow(self) -> StateGraph:
         """Crée le workflow LangGraph avec LLM."""

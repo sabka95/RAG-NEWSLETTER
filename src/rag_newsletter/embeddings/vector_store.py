@@ -16,6 +16,14 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Import pour le reranking Cross-Encoder
+try:
+    from sentence_transformers import CrossEncoder
+    CROSS_ENCODER_AVAILABLE = True
+except ImportError:
+    CROSS_ENCODER_AVAILABLE = False
+    logger.warning("⚠️ sentence-transformers CrossEncoder non disponible")
+
 
 class OptimizedVectorStoreService:
     """
@@ -48,6 +56,8 @@ class OptimizedVectorStoreService:
         embedding_service=None,
         use_binary_quantization: bool = True,
         hnsw_config: Optional[Dict] = None,
+        use_reranking: bool = True,
+        reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
     ):
         """
         Initialise le service de vector store optimisé.
@@ -58,6 +68,8 @@ class OptimizedVectorStoreService:
             embedding_service: Service d'embeddings MLX pour générer les vecteurs
             use_binary_quantization (bool): Activer la quantization binaire pour économiser l'espace
             hnsw_config (Optional[Dict]): Configuration HNSW personnalisée
+            use_reranking (bool): Activer le reranking Cross-Encoder (défaut: True)
+            reranker_model (str): Modèle Cross-Encoder à utiliser (défaut: ms-marco-MiniLM-L-6-v2)
 
         Raises:
             RuntimeError: Si la connexion à Qdrant échoue
@@ -66,8 +78,11 @@ class OptimizedVectorStoreService:
         self.collection_name = collection_name
         self.embedding_service = embedding_service
         self.use_binary_quantization = use_binary_quantization
+        self.use_reranking = use_reranking
+        self.reranker_model = reranker_model
         self.client = None
         self.vector_store = None
+        self.reranker = None
 
         # Configuration HNSW optimisée pour Apple Silicon M4
         # HNSW (Hierarchical Navigable Small World) est un algorithme de recherche
@@ -81,6 +96,10 @@ class OptimizedVectorStoreService:
 
         # Initialiser la connexion à Qdrant
         self._initialize_client()
+        
+        # Initialiser le reranker si activé
+        if self.use_reranking:
+            self._initialize_reranker()
 
     def _initialize_client(self):
         """
@@ -198,6 +217,28 @@ class OptimizedVectorStoreService:
             logger.error(f"❌ Erreur lors de l'initialisation du vector store: {e}")
             # Ne pas lever d'exception car MMR est optionnel
             self.langchain_vectorstore = None
+
+    def _initialize_reranker(self):
+        """
+        Initialise le Cross-Encoder pour le reranking.
+        
+        Cette méthode charge le modèle Cross-Encoder qui sera utilisé pour
+        reranker les résultats de recherche et améliorer la pertinence.
+        """
+        if not CROSS_ENCODER_AVAILABLE:
+            logger.warning("⚠️ Cross-Encoder non disponible, reranking désactivé")
+            self.use_reranking = False
+            return
+        
+        try:
+            logger.info(f"🔄 Chargement du reranker Cross-Encoder: {self.reranker_model}")
+            self.reranker = CrossEncoder(self.reranker_model)
+            logger.info("✅ Reranker Cross-Encoder initialisé")
+        except Exception as e:
+            logger.error(f"❌ Erreur lors de l'initialisation du reranker: {e}")
+            logger.warning("⚠️ Reranking désactivé")
+            self.use_reranking = False
+            self.reranker = None
 
     def add_documents(self, documents: List[Document]) -> List[str]:
         """
@@ -521,6 +562,78 @@ class OptimizedVectorStoreService:
             results = self._perform_search(query, k, filter)
             logger.info(f"🔍 Recherche HNSW seul avec scores terminée: {len(results)} résultats")
             return results
+
+    def search_with_reranking(
+        self, 
+        query: str, 
+        k: int = 5, 
+        filter: Optional[Dict] = None,
+        rerank_candidates: int = 20
+    ) -> List[Tuple[Document, float]]:
+        """
+        Recherche avec reranking Cross-Encoder pour une pertinence optimale.
+        
+        Cette méthode combine HNSW + MMR pour la récupération initiale, puis utilise
+        un Cross-Encoder pour reranker les candidats et améliorer la pertinence.
+        
+        Args:
+            query (str): Requête textuelle à rechercher
+            k (int): Nombre de résultats finaux à retourner
+            filter (Optional[Dict]): Filtres de métadonnées à appliquer
+            rerank_candidates (int): Nombre de candidats à reranker (défaut: 20)
+            
+        Returns:
+            List[Tuple[Document, float]]: Documents rerankés avec scores de pertinence
+            
+        Raises:
+            RuntimeError: Si le reranker n'est pas disponible
+        """
+        if not self.use_reranking or not self.reranker:
+            logger.warning("⚠️ Reranking non disponible, utilisation de la recherche standard")
+            return self.similarity_search_with_score(query, k, filter)
+        
+        try:
+            logger.info(f"🎯 Recherche avec reranking Cross-Encoder: '{query[:50]}...'")
+            
+            # 1. Récupération initiale avec plus de candidats
+            logger.info(f"🔍 Récupération de {rerank_candidates} candidats...")
+            initial_results = self._perform_search(query, rerank_candidates, filter)
+            
+            if not initial_results:
+                logger.warning("⚠️ Aucun candidat trouvé pour le reranking")
+                return []
+            
+            # 2. Préparer les paires (query, document) pour le reranking
+            query_doc_pairs = []
+            documents = []
+            
+            for doc, score in initial_results:
+                query_doc_pairs.append([query, doc.page_content])
+                documents.append((doc, score))
+            
+            # 3. Reranking avec Cross-Encoder
+            logger.info(f"🔄 Reranking de {len(query_doc_pairs)} candidats...")
+            rerank_scores = self.reranker.predict(query_doc_pairs)
+            
+            # 4. Combiner les scores et trier
+            reranked_results = []
+            for i, (doc, original_score) in enumerate(documents):
+                rerank_score = float(rerank_scores[i])
+                # Combiner le score original et le score de reranking
+                combined_score = (original_score + rerank_score) / 2
+                reranked_results.append((doc, combined_score))
+            
+            # 5. Trier par score combiné et retourner les k meilleurs
+            reranked_results.sort(key=lambda x: x[1], reverse=True)
+            final_results = reranked_results[:k]
+            
+            logger.info(f"✅ Reranking terminé: {len(final_results)} résultats optimisés")
+            return final_results
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur lors du reranking: {e}")
+            logger.warning("⚠️ Fallback vers recherche standard")
+            return self.similarity_search_with_score(query, k, filter)
 
     def _build_filter(self, filter_dict: Dict) -> models.Filter:
         """
