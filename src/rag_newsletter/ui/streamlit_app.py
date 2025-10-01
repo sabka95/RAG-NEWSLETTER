@@ -91,7 +91,9 @@ st.markdown("""
         padding: 1rem 1.5rem;
         border-radius: 20px 20px 5px 20px;
         margin: 1rem 0;
-        margin-left: 20%;
+        margin-left: 40%;
+        margin-right: 10%;
+        max-width: 50%;
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     
@@ -101,7 +103,9 @@ st.markdown("""
         padding: 1rem 1.5rem;
         border-radius: 20px 20px 20px 5px;
         margin: 1rem 0;
-        margin-right: 20%;
+        margin-left: 10%;
+        margin-right: 40%;
+        max-width: 50%;
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     
@@ -201,7 +205,22 @@ def initialize_rag_service():
     """Initialise le service RAG avec cache."""
     try:
         logger.info("🚀 Initialisation du service RAG...")
-        rag_service = OptimizedRAGIngestionService()
+        # Utiliser le service vectoriel optimisé avec BM25 et reranking
+        from rag_newsletter.embeddings.vector_store import OptimizedVectorStoreService
+        from rag_newsletter.embeddings.embedding_service import LangChainMLXEmbeddings
+        
+        # Créer le service d'embeddings avec MLX
+        from rag_newsletter.embeddings.embedding_service import MLXEmbeddingService
+        mlx_service = MLXEmbeddingService()
+        embedding_service = LangChainMLXEmbeddings(mlx_service=mlx_service)
+        
+        # Créer le service vectoriel optimisé
+        rag_service = OptimizedVectorStoreService(
+            embedding_service=embedding_service,
+            use_bm25=True,
+            use_reranking=True,
+            hybrid_alpha=0.7
+        )
         logger.info("✅ Service RAG initialisé avec succès")
         return rag_service
     except Exception as e:
@@ -210,7 +229,7 @@ def initialize_rag_service():
         return None
 
 @st.cache_resource
-def initialize_workflow(_rag_service, model_name: str = "llama3.1:8b"):
+def initialize_workflow(_rag_service, model_name: str = "qwen2.5:14b"):
     """Initialise le workflow RAG avec cache."""
     try:
         logger.info(f"🧠 Initialisation du workflow RAG avec modèle: {model_name}")
@@ -244,7 +263,7 @@ def initialize_session_state():
         st.session_state.rag_service = None
     
     if 'model_name' not in st.session_state:
-        st.session_state.model_name = "llama3.1:8b"
+        st.session_state.model_name = "qwen2.5:14b"
     
     # Suppression du mode comparaison - détection automatique par LLM
     
@@ -283,6 +302,9 @@ def render_sidebar():
         # Modèle LLM
         st.subheader("🧠 Modèle LLM")
         model_options = {
+            "Qwen 2.5 14B (Recommandé)": "qwen2.5:14b",
+            "Qwen3 14B": "qwen3:14b",
+            "Qwen3 32B": "qwen3:32b",
             "Llama 3.1 8B": "llama3.1:8b",
             "Llama 3.1 7B": "llama3.1:7b",
             "Llama 2 7B": "llama2:7b",

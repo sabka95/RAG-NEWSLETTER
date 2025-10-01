@@ -6,6 +6,9 @@
 # =============================================================================
 
 from typing import Any, Dict, List, Optional, Tuple
+import re
+from collections import Counter
+import math
 
 import numpy as np
 from langchain.schema import Document
@@ -23,6 +26,441 @@ try:
 except ImportError:
     CROSS_ENCODER_AVAILABLE = False
     logger.warning("⚠️ sentence-transformers CrossEncoder non disponible")
+
+# Import pour BM25
+try:
+    from rank_bm25 import BM25Okapi
+    BM25_AVAILABLE = True
+except ImportError:
+    BM25_AVAILABLE = False
+    logger.warning("⚠️ rank-bm25 non disponible, BM25 désactivé")
+
+
+class BM25Service:
+    """
+    Service BM25 pour l'indexation hybride dense+sparse.
+    
+    BM25 est un algorithme de scoring de pertinence qui complète les embeddings
+    denses en capturant les correspondances exactes de termes et la fréquence
+    des mots-clés importants.
+    """
+    
+    def __init__(self, k1: float = 1.2, b: float = 0.75, use_available: bool = True):
+        """
+        Initialise le service BM25.
+        
+        Args:
+            k1 (float): Paramètre de saturation de la fréquence des termes (défaut: 1.2)
+            b (float): Paramètre de normalisation de la longueur (défaut: 0.75)
+            use_available (bool): Utiliser BM25 si disponible (défaut: True)
+        """
+        self.k1 = k1
+        self.b = b
+        self.use_bm25 = use_available and BM25_AVAILABLE
+        self.bm25_model = None
+        self.documents = []
+        self.document_metadata = []
+        
+        if not self.use_bm25:
+            logger.warning("⚠️ BM25 désactivé, recherche textuelle basique utilisée")
+        else:
+            logger.info(f"🔍 Service BM25 initialisé (k1={k1}, b={b})")
+    
+    def add_documents(self, documents: List[Dict[str, Any]]) -> bool:
+        """
+        Ajoute des documents à l'index BM25.
+        
+        Args:
+            documents (List[Dict]): Documents avec 'content' et métadonnées
+            
+        Returns:
+            bool: True si succès, False sinon
+        """
+        if not self.use_bm25:
+            logger.warning("⚠️ BM25 non disponible, documents non indexés")
+            return False
+        
+        try:
+            # Extraire les contenus textuels
+            corpus = []
+            metadata = []
+            
+            for doc in documents:
+                content = doc.get("content", "")
+                if content:
+                    # Tokeniser le contenu
+                    tokens = self._tokenize(content)
+                    corpus.append(tokens)
+                    metadata.append(doc)
+            
+            if not corpus:
+                logger.warning("⚠️ Aucun contenu textuel trouvé dans les documents")
+                return False
+            
+            # Créer le modèle BM25
+            self.bm25_model = BM25Okapi(corpus, k1=self.k1, b=self.b)
+            self.documents = corpus
+            self.document_metadata = metadata
+            
+            logger.info(f"✅ {len(corpus)} documents indexés avec BM25")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur indexation BM25: {e}")
+            return False
+    
+    def search(self, query: str, k: int = 5, min_score: float = 0.0) -> List[Tuple[Dict[str, Any], float]]:
+        """
+        Recherche BM25 avec scores de pertinence.
+        
+        Args:
+            query (str): Requête textuelle
+            k (int): Nombre de résultats à retourner
+            min_score (float): Score minimum pour filtrer les résultats
+            
+        Returns:
+            List[Tuple[Dict, float]]: Documents avec scores BM25
+        """
+        if not self.use_bm25 or not self.bm25_model:
+            logger.warning("⚠️ BM25 non disponible, recherche textuelle basique")
+            logger.debug(f"BM25 disponible: {self.use_bm25}, Modèle: {self.bm25_model is not None}")
+            return self._basic_text_search(query, k)
+        
+        try:
+            # Debug: vérifier l'état de BM25
+            logger.debug(f"BM25: {len(self.documents)} documents, {len(self.document_metadata)} métadonnées")
+            
+            # Tokeniser la requête
+            query_tokens = self._tokenize(query)
+            
+            if not query_tokens:
+                logger.warning("⚠️ Requête vide après tokenisation")
+                return []
+            
+            # Calculer les scores BM25
+            scores = self.bm25_model.get_scores(query_tokens)
+            
+            # Créer les résultats avec scores
+            results = []
+            for i, (score, metadata) in enumerate(zip(scores, self.document_metadata)):
+                if score >= min_score:
+                    results.append((metadata, float(score)))
+            
+            # Trier par score décroissant
+            results.sort(key=lambda x: x[1], reverse=True)
+            
+            # Retourner les k meilleurs
+            final_results = results[:k]
+            
+            logger.info(f"🔍 Recherche BM25: {len(final_results)} résultats (score min: {min_score})")
+            return final_results
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur recherche BM25: {e}")
+            return self._basic_text_search(query, k)
+    
+    def _tokenize(self, text: str) -> List[str]:
+        """
+        Tokenise le texte pour BM25.
+        
+        Args:
+            text (str): Texte à tokeniser
+            
+        Returns:
+            List[str]: Liste de tokens
+        """
+        if not text:
+            return []
+        
+        # Nettoyer et normaliser le texte
+        text = re.sub(r'[^\w\s]', ' ', text.lower())
+        text = re.sub(r'\s+', ' ', text.strip())
+        
+        # Diviser en tokens
+        tokens = text.split()
+        
+        # Filtrer les tokens trop courts
+        tokens = [token for token in tokens if len(token) > 2]
+        
+        return tokens
+    
+    def _basic_text_search(self, query: str, k: int) -> List[Tuple[Dict[str, Any], float]]:
+        """
+        Recherche textuelle basique (fallback).
+        
+        Args:
+            query (str): Requête textuelle
+            k (int): Nombre de résultats
+            
+        Returns:
+            List[Tuple[Dict, float]]: Résultats avec scores basiques
+        """
+        if not self.document_metadata:
+            return []
+        
+        query_lower = query.lower()
+        results = []
+        
+        for doc in self.document_metadata:
+            content = doc.get("content", "").lower()
+            
+            # Score basique basé sur la fréquence des mots
+            query_words = query_lower.split()
+            matches = sum(1 for word in query_words if word in content)
+            score = matches / len(query_words) if query_words else 0.0
+            
+            if score > 0:
+                results.append((doc, score))
+        
+        # Trier par score
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:k]
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Retourne les statistiques du service BM25.
+        
+        Returns:
+            Dict[str, Any]: Statistiques du service
+        """
+        return {
+            "bm25_available": self.use_bm25,
+            "documents_indexed": len(self.documents),
+            "model_initialized": self.bm25_model is not None,
+            "parameters": {
+                "k1": self.k1,
+                "b": self.b
+            }
+        }
+
+
+class HybridSearchService:
+    """
+    Service de recherche hybride combinant embeddings denses et BM25.
+    
+    Combine les résultats des embeddings vectoriels (dense) et BM25 (sparse)
+    pour améliorer la pertinence globale de la recherche.
+    """
+    
+    def __init__(self, vector_service, bm25_service: BM25Service, alpha: float = 0.7):
+        """
+        Initialise le service de recherche hybride.
+        
+        Args:
+            vector_service: Service d'embeddings vectoriels
+            bm25_service (BM25Service): Service BM25
+            alpha (float): Poids des embeddings vs BM25 (0.0 = BM25 seul, 1.0 = embeddings seul)
+        """
+        self.vector_service = vector_service
+        self.bm25_service = bm25_service
+        self.alpha = alpha  # Poids des embeddings (1-alpha = poids BM25)
+        
+        logger.info(f"🔀 Service de recherche hybride initialisé (alpha={alpha})")
+    
+    def hybrid_search(
+        self, 
+        query: str, 
+        k: int = 5, 
+        use_mmr: bool = True,
+        lambda_mult: float = 0.7
+    ) -> List[Dict[str, Any]]:
+        """
+        Recherche hybride combinant embeddings et BM25.
+        
+        Args:
+            query (str): Requête textuelle
+            k (int): Nombre de résultats finaux
+            use_mmr (bool): Utiliser MMR pour les embeddings
+            lambda_mult (float): Facteur de diversité MMR
+            
+        Returns:
+            List[Dict]: Documents avec scores hybrides
+        """
+        try:
+            logger.info(f"🔀 Recherche hybride: '{query[:50]}...'")
+            
+            # 1. Recherche vectorielle (embeddings)
+            vector_results = []
+            if self.vector_service:
+                try:
+                    # Utiliser similarity_search_with_score pour obtenir les scores
+                    vector_results_langchain = self.vector_service.similarity_search_with_score(
+                        query=query,
+                        k=k * 2, # Récupérer plus de candidats pour la fusion
+                        use_mmr=use_mmr,
+                        lambda_mult=lambda_mult
+                    )
+                    
+                    # Convertir en format standard
+                    for doc, score in vector_results_langchain:
+                        vector_results.append({
+                            "document": doc,
+                            "score": float(score),  # Score réel
+                            "source": "vector"
+                        })
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur recherche vectorielle: {e}")
+                    # Fallback vers recherche simple
+                    try:
+                        vector_results_langchain = self.vector_service.similarity_search(
+                            query=query,
+                            k=k * 2,
+                            use_mmr=use_mmr,
+                            lambda_mult=lambda_mult
+                        )
+                        # Convertir en format avec scores
+                        for doc in vector_results_langchain:
+                            vector_results.append({
+                                "document": doc,
+                                "score": 1.0,  # Score par défaut
+                                "source": "vector"
+                            })
+                    except Exception as e2:
+                        logger.warning(f"⚠️ Erreur recherche vectorielle fallback: {e2}")
+            
+            # 2. Recherche BM25 (sparse)
+            bm25_results = []
+            if self.bm25_service:
+                try:
+                    bm25_docs_with_scores = self.bm25_service.search(query, k=k*2)
+                    
+                    # Normaliser les scores BM25
+                    if bm25_docs_with_scores:
+                        max_score = max(score for _, score in bm25_docs_with_scores)
+                        for doc, score in bm25_docs_with_scores:
+                            normalized_score = score / max_score if max_score > 0 else 0.0
+                            bm25_results.append({
+                                "document": doc,
+                                "score": normalized_score,
+                                "source": "bm25"
+                            })
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur recherche BM25: {e}")
+            
+            # 3. Combiner les résultats
+            combined_results = self._combine_results(vector_results, bm25_results, k)
+            
+            logger.info(f"✅ Recherche hybride terminée: {len(combined_results)} résultats")
+            return combined_results
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur recherche hybride: {e}")
+            # Fallback vers recherche vectorielle seule
+            if self.vector_service:
+                try:
+                    return self.vector_service.search(query, k, use_mmr, lambda_mult)
+                except:
+                    return []
+            return []
+    
+    def _combine_results(
+        self, 
+        vector_results: List[Dict], 
+        bm25_results: List[Dict], 
+        k: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Combine les résultats vectoriels et BM25.
+        
+        Args:
+            vector_results (List[Dict]): Résultats des embeddings
+            bm25_results (List[Dict]): Résultats BM25
+            k (int): Nombre de résultats finaux
+            
+        Returns:
+            List[Dict]: Résultats combinés
+        """
+        # Créer un dictionnaire pour combiner les scores
+        combined_scores = {}
+        
+        # Ajouter les scores vectoriels
+        for result in vector_results:
+            doc_id = self._get_document_id(result["document"])
+            if doc_id not in combined_scores:
+                combined_scores[doc_id] = {
+                    "document": result["document"],
+                    "vector_score": 0.0,
+                    "bm25_score": 0.0,
+                    "combined_score": 0.0
+                }
+            combined_scores[doc_id]["vector_score"] = result["score"]
+        
+        # Ajouter les scores BM25
+        for result in bm25_results:
+            doc_id = self._get_document_id(result["document"])
+            if doc_id not in combined_scores:
+                combined_scores[doc_id] = {
+                    "document": result["document"],
+                    "vector_score": 0.0,
+                    "bm25_score": 0.0,
+                    "combined_score": 0.0
+                }
+            combined_scores[doc_id]["bm25_score"] = result["score"]
+        
+        # Calculer les scores combinés
+        for doc_id, scores in combined_scores.items():
+            vector_score = scores["vector_score"]
+            bm25_score = scores["bm25_score"]
+            
+            # Score hybride pondéré
+            combined_score = self.alpha * vector_score + (1 - self.alpha) * bm25_score
+            scores["combined_score"] = combined_score
+        
+        # Trier par score combiné et retourner les k meilleurs
+        sorted_results = sorted(
+            combined_scores.values(),
+            key=lambda x: x["combined_score"],
+            reverse=True
+        )
+        
+        # Retourner les documents avec métadonnées de scoring
+        final_results = []
+        for result in sorted_results[:k]:
+            doc = result["document"]
+            
+            # Convertir Document LangChain en dictionnaire si nécessaire
+            if hasattr(doc, 'page_content'):
+                # C'est un objet Document LangChain
+                doc_dict = {
+                    "content": doc.page_content,
+                    "source": doc.metadata.get("source", "unknown"),
+                    "page": doc.metadata.get("page", "0"),
+                    "_hybrid_score": result["combined_score"],
+                    "_vector_score": result["vector_score"],
+                    "_bm25_score": result["bm25_score"],
+                    **doc.metadata
+                }
+            else:
+                # C'est déjà un dictionnaire
+                doc_dict = doc.copy()
+                doc_dict["_hybrid_score"] = result["combined_score"]
+                doc_dict["_vector_score"] = result["vector_score"]
+                doc_dict["_bm25_score"] = result["bm25_score"]
+            
+            final_results.append(doc_dict)
+        
+        return final_results
+    
+    def _get_document_id(self, document) -> str:
+        """
+        Génère un ID unique pour un document.
+        
+        Args:
+            document: Document (Dict ou Document LangChain)
+            
+        Returns:
+            str: ID unique du document
+        """
+        # Gérer les objets Document LangChain
+        if hasattr(document, 'metadata'):
+            source = document.metadata.get("source", "unknown")
+            page = document.metadata.get("page", "0")
+        else:
+            # C'est un dictionnaire
+            source = document.get("source", "unknown")
+            page = document.get("page", "0")
+        
+        return f"{source}_{page}"
 
 
 class OptimizedVectorStoreService:
@@ -58,6 +496,8 @@ class OptimizedVectorStoreService:
         hnsw_config: Optional[Dict] = None,
         use_reranking: bool = True,
         reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        use_bm25: bool = True,
+        hybrid_alpha: float = 0.7,
     ):
         """
         Initialise le service de vector store optimisé.
@@ -70,6 +510,8 @@ class OptimizedVectorStoreService:
             hnsw_config (Optional[Dict]): Configuration HNSW personnalisée
             use_reranking (bool): Activer le reranking Cross-Encoder (défaut: True)
             reranker_model (str): Modèle Cross-Encoder à utiliser (défaut: ms-marco-MiniLM-L-6-v2)
+            use_bm25 (bool): Activer BM25 pour recherche hybride (défaut: True)
+            hybrid_alpha (float): Poids des embeddings vs BM25 (défaut: 0.7)
 
         Raises:
             RuntimeError: Si la connexion à Qdrant échoue
@@ -80,9 +522,13 @@ class OptimizedVectorStoreService:
         self.use_binary_quantization = use_binary_quantization
         self.use_reranking = use_reranking
         self.reranker_model = reranker_model
+        self.use_bm25 = use_bm25 and BM25_AVAILABLE
+        self.hybrid_alpha = hybrid_alpha
         self.client = None
         self.vector_store = None
         self.reranker = None
+        self.bm25_service = None
+        self.hybrid_service = None
 
         # Configuration HNSW optimisée pour Apple Silicon M4
         # HNSW (Hierarchical Navigable Small World) est un algorithme de recherche
@@ -100,6 +546,10 @@ class OptimizedVectorStoreService:
         # Initialiser le reranker si activé
         if self.use_reranking:
             self._initialize_reranker()
+        
+        # Initialiser BM25 si activé
+        if self.use_bm25:
+            self._initialize_bm25()
 
     def _initialize_client(self):
         """
@@ -240,6 +690,81 @@ class OptimizedVectorStoreService:
             self.use_reranking = False
             self.reranker = None
 
+    def _initialize_bm25(self):
+        """
+        Initialise le service BM25 pour la recherche hybride.
+        
+        Cette méthode crée le service BM25 et le service de recherche hybride
+        pour combiner les embeddings denses avec la recherche textuelle sparse.
+        """
+        try:
+            logger.info("🔍 Initialisation du service BM25...")
+            self.bm25_service = BM25Service()
+            self.hybrid_service = HybridSearchService(
+                vector_service=self,
+                bm25_service=self.bm25_service,
+                alpha=self.hybrid_alpha
+            )
+            
+            # Initialiser BM25 avec les documents existants
+            self._load_existing_documents_to_bm25()
+            
+            logger.info("✅ Service BM25 initialisé")
+        except Exception as e:
+            logger.error(f"❌ Erreur initialisation BM25: {e}")
+            self.use_bm25 = False
+            self.bm25_service = None
+            self.hybrid_service = None
+
+    def _load_existing_documents_to_bm25(self):
+        """
+        Charge les documents existants dans BM25.
+        
+        Cette méthode récupère tous les documents du vector store et les indexe
+        avec BM25 pour permettre la recherche hybride.
+        """
+        try:
+            if not self.bm25_service:
+                return
+                
+            logger.info("📚 Chargement des documents existants pour BM25...")
+            
+            # Récupérer tous les points de la collection
+            points = self.client.scroll(
+                collection_name=self.collection_name,
+                limit=10000,  # Limite raisonnable
+                with_payload=True
+            )[0]
+            
+            if not points:
+                logger.warning("⚠️ Aucun document trouvé dans la collection")
+                return
+            
+            # Convertir les points en documents BM25
+            bm25_docs = []
+            for point in points:
+                payload = point.payload
+                if payload and 'page_content' in payload:
+                    bm25_doc = {
+                        'content': payload['page_content'],
+                        'source': payload.get('source', 'Document inconnu'),
+                        'page': payload.get('page', 'N/A')
+                    }
+                    bm25_docs.append(bm25_doc)
+            
+            if bm25_docs:
+                # Indexer avec BM25
+                success = self.bm25_service.add_documents(bm25_docs)
+                if success:
+                    logger.info(f"✅ {len(bm25_docs)} documents chargés dans BM25")
+                else:
+                    logger.warning("⚠️ Échec chargement documents BM25")
+            else:
+                logger.warning("⚠️ Aucun document valide trouvé pour BM25")
+                
+        except Exception as e:
+            logger.error(f"❌ Erreur chargement documents BM25: {e}")
+
     def add_documents(self, documents: List[Document]) -> List[str]:
         """
         Ajoute des documents au vector store avec optimisations pour Apple Silicon.
@@ -320,6 +845,30 @@ class OptimizedVectorStoreService:
             )
 
             ids = [str(i + 1) for i in range(len(documents))]
+            
+            # Indexer aussi avec BM25 si activé
+            if self.use_bm25 and self.bm25_service:
+                try:
+                    # Convertir les documents LangChain en format BM25
+                    bm25_docs = []
+                    for doc in documents:
+                        bm25_doc = {
+                            "content": doc.page_content,
+                            "source": doc.metadata.get("source", "unknown"),
+                            "page": doc.metadata.get("page", "0"),
+                            **doc.metadata
+                        }
+                        bm25_docs.append(bm25_doc)
+                    
+                    # Indexer avec BM25
+                    bm25_success = self.bm25_service.add_documents(bm25_docs)
+                    if bm25_success:
+                        logger.info(f"✅ Documents indexés avec BM25: {len(bm25_docs)}")
+                    else:
+                        logger.warning("⚠️ Échec indexation BM25")
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur indexation BM25: {e}")
+            
             logger.info(
                 f"✅ Documents ajoutés avec succès: {len(ids)} embeddings optimisés"
             )
@@ -634,6 +1183,56 @@ class OptimizedVectorStoreService:
             logger.error(f"❌ Erreur lors du reranking: {e}")
             logger.warning("⚠️ Fallback vers recherche standard")
             return self.similarity_search_with_score(query, k, filter)
+    
+    def hybrid_search(
+        self, 
+        query: str, 
+        k: int = 5, 
+        filter: Optional[Dict] = None,
+        use_mmr: bool = True,
+        lambda_mult: float = 0.7
+    ) -> List[Dict[str, Any]]:
+        """
+        Recherche hybride combinant embeddings denses et BM25.
+        
+        Cette méthode combine les résultats des embeddings vectoriels (dense)
+        et BM25 (sparse) pour améliorer la pertinence globale.
+        
+        Args:
+            query (str): Requête textuelle à rechercher
+            k (int): Nombre de résultats à retourner
+            filter (Optional[Dict]): Filtres de métadonnées à appliquer
+            use_mmr (bool): Utiliser MMR pour les embeddings
+            lambda_mult (float): Facteur de diversité MMR
+            
+        Returns:
+            List[Dict]: Documents avec scores hybrides
+            
+        Raises:
+            RuntimeError: Si le service hybride n'est pas disponible
+        """
+        if not self.use_bm25 or not self.hybrid_service:
+            logger.warning("⚠️ Recherche hybride non disponible, fallback vers recherche standard")
+            return self.similarity_search(query, k, filter, use_mmr, lambda_mult)
+        
+        try:
+            logger.info(f"🔀 Recherche hybride: '{query[:50]}...'")
+            
+            # Utiliser le service hybride
+            results = self.hybrid_service.hybrid_search(
+                query=query,
+                k=k,
+                use_mmr=use_mmr,
+                lambda_mult=lambda_mult
+            )
+            
+            logger.info(f"✅ Recherche hybride terminée: {len(results)} résultats")
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur recherche hybride: {e}")
+            logger.warning("⚠️ Fallback vers recherche standard")
+            return self.similarity_search(query, k, filter, use_mmr, lambda_mult)
 
     def _build_filter(self, filter_dict: Dict) -> models.Filter:
         """

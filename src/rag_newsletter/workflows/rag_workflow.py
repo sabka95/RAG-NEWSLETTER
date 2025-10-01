@@ -67,6 +67,7 @@ class RAGWorkflow:
             llm_model (str): Modèle LLM à utiliser (défaut: qwen3:14b)
         """
         self.rag_service = rag_service
+        self.vector_store = rag_service  # Alias pour compatibilité
         self.max_retries = max_retries
         self.llm_model = llm_model
         
@@ -95,6 +96,7 @@ class RAGWorkflow:
         workflow.add_node("retrieval", self._retrieval_node)
         workflow.add_node("comparison", self._comparison_node)
         workflow.add_node("generation", self._generation_node)
+        workflow.add_node("self_reflection", self._self_reflection_node)
         workflow.add_node("validation", self._validation_node)
         workflow.add_node("error_handler", self._error_handler_node)
         
@@ -121,12 +123,14 @@ class RAGWorkflow:
         
         workflow.add_edge("retrieval", "generation")
         workflow.add_edge("comparison", "generation")
+        workflow.add_edge("generation", "self_reflection")
         
         workflow.add_conditional_edges(
-            "generation",
-            self._route_after_generation,
+            "self_reflection",
+            self._route_after_self_reflection,
             {
                 "validate": "validation",
+                "regenerate": "generation",
                 "complete": END
             }
         )
@@ -185,13 +189,23 @@ class RAGWorkflow:
         return state
     
     def _intent_node(self, state: RAGState) -> RAGState:
-        """Nœud d'analyse d'intention avec LLM."""
+        """Nœud d'analyse d'intention avec LLM et décomposition."""
         logger.info("🧠 Analyse d'intention avec LLM...")
         
         try:
             # Utiliser le LLM pour analyser l'intention
             intent_analysis = self.intent_analyzer.analyze_intent(state["query"])
             state["intent_analysis"] = intent_analysis
+            
+            # Décomposer la requête si elle est complexe
+            if hasattr(self.intent_analyzer, 'decompose_complex_query'):
+                try:
+                    decomposition = self.intent_analyzer.decompose_complex_query(state["query"])
+                    if decomposition.get("is_complex", False):
+                        state["query_decomposition"] = decomposition
+                        logger.info(f"🔍 Requête complexe décomposée: {len(decomposition.get('sub_queries', []))} sous-requêtes")
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur décomposition: {e}")
             
             intent = intent_analysis.get("intent", QueryIntent.SIMPLE_QA)
             confidence = intent_analysis.get("confidence", 0.0)
@@ -218,10 +232,7 @@ class RAGWorkflow:
             intent_analysis = state.get("intent_analysis", {})
             intent = intent_analysis.get("intent", QueryIntent.SIMPLE_QA)
             
-            # Récupération automatique avec HNSW + MMR
-            logger.info("🔍 Recherche automatique (HNSW + MMR)")
-            
-            # Ajuster les paramètres selon l'intention
+            # Définir les paramètres de recherche selon l'intention
             if intent == QueryIntent.EVOLUTION_ANALYSIS:
                 # Plus de documents pour l'analyse temporelle
                 k = 10
@@ -237,12 +248,182 @@ class RAGWorkflow:
                 k = 5
                 lambda_mult = 0.7
             
-            documents = self.rag_service.search(
-                state["query"], 
-                k=k, 
-                use_mmr=True,
-                lambda_mult=lambda_mult
-            )
+            # 1. PRIORITÉ : Recherche hybride + Reranking (combinaison optimale)
+            if (hasattr(self.vector_store, 'hybrid_search') and 
+                hasattr(self.vector_store, 'search_with_reranking')):
+                logger.info("🚀 Recherche hybride + Reranking (combinaison optimale)")
+                try:
+                    # D'abord recherche hybride pour plus de candidats
+                    hybrid_docs = self.vector_store.hybrid_search(
+                        query=state["query"],
+                        k=k*2,  # Plus de candidats pour le reranking
+                        use_mmr=True,
+                        lambda_mult=lambda_mult
+                    )
+                    if hybrid_docs:
+                        # Puis reranking des résultats hybrides
+                        results = self.vector_store.search_with_reranking(
+                            query=state["query"],
+                            k=k,
+                            rerank_candidates=len(hybrid_docs)
+                        )
+                        if results:
+                            # Convertir les objets Document en dictionnaires
+                            documents = []
+                            for doc, score in results:
+                                if hasattr(doc, 'metadata'):
+                                    # Objet Document de LangChain
+                                    doc_dict = {
+                                        "content": doc.page_content,
+                                        "source": doc.metadata.get("source", "Document inconnu"),
+                                        "page": doc.metadata.get("page", "N/A"),
+                                        "score": score
+                                    }
+                                else:
+                                    # Déjà un dictionnaire
+                                    doc_dict = doc.copy()
+                                    doc_dict["score"] = score
+                                documents.append(doc_dict)
+                            
+                            logger.info(f"✅ {len(documents)} documents récupérés avec hybride + reranking")
+                            state["retrieved_documents"] = documents
+                            return state
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur hybride + reranking: {e}")
+            
+            # 2. Recherche hybride seule (si pas de reranking)
+            if hasattr(self.vector_store, 'hybrid_search'):
+                logger.info("🔀 Recherche hybride (embeddings + BM25)")
+                try:
+                    documents = self.vector_store.hybrid_search(
+                        query=state["query"],
+                        k=k,
+                        use_mmr=True,
+                        lambda_mult=lambda_mult
+                    )
+                    if documents:
+                        # Convertir les objets Document en dictionnaires si nécessaire
+                        converted_docs = []
+                        for doc in documents:
+                            if hasattr(doc, 'metadata'):
+                                # Objet Document de LangChain
+                                doc_dict = {
+                                    "content": doc.page_content,
+                                    "source": doc.metadata.get("source", "Document inconnu"),
+                                    "page": doc.metadata.get("page", "N/A")
+                                }
+                            else:
+                                # Déjà un dictionnaire
+                                doc_dict = doc.copy()
+                            converted_docs.append(doc_dict)
+                        
+                        logger.info(f"✅ {len(converted_docs)} documents récupérés avec recherche hybride")
+                        state["retrieved_documents"] = converted_docs
+                        return state
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur recherche hybride: {e}")
+            
+            # 3. Reranking seul (si pas de BM25)
+            if hasattr(self.vector_store, 'search_with_reranking'):
+                logger.info("🎯 Recherche avec reranking Cross-Encoder")
+                try:
+                    results = self.vector_store.search_with_reranking(
+                        query=state["query"],
+                        k=k,
+                        rerank_candidates=k*2
+                    )
+                    if results:
+                        # Convertir les objets Document en dictionnaires
+                        documents = []
+                        for doc, score in results:
+                            if hasattr(doc, 'metadata'):
+                                # Objet Document de LangChain
+                                doc_dict = {
+                                    "content": doc.page_content,
+                                    "source": doc.metadata.get("source", "Document inconnu"),
+                                    "page": doc.metadata.get("page", "N/A"),
+                                    "score": score
+                                }
+                            else:
+                                # Déjà un dictionnaire
+                                doc_dict = doc.copy()
+                                doc_dict["score"] = score
+                            documents.append(doc_dict)
+                        
+                        logger.info(f"✅ {len(documents)} documents récupérés avec reranking")
+                        state["retrieved_documents"] = documents
+                        return state
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur reranking: {e}")
+            
+            # Fallback vers recherche standard HNSW + MMR
+            logger.info("🔍 Recherche automatique (HNSW + MMR)")
+            
+            # Essayer d'abord avec recherche hybride si disponible
+            if hasattr(self.vector_store, 'hybrid_search'):
+                try:
+                    logger.info("🔀 Recherche hybride (embeddings + BM25)")
+                    documents = self.vector_store.hybrid_search(
+                        query=state["query"],
+                        k=k,
+                        use_mmr=True,
+                        lambda_mult=lambda_mult
+                    )
+                    logger.info(f"✅ {len(documents)} documents récupérés avec recherche hybride")
+                except Exception as e:
+                    logger.warning(f"⚠️ Recherche hybride échouée, fallback vers reranking: {e}")
+                    # Fallback vers reranking
+                    if hasattr(self.vector_store, 'search_with_reranking'):
+                        try:
+                            logger.info("🎯 Recherche avec reranking Cross-Encoder")
+                            documents_with_scores = self.vector_store.search_with_reranking(
+                                query=state["query"],
+                                k=k,
+                                rerank_candidates=min(20, k * 3)
+                            )
+                            documents = [doc for doc, score in documents_with_scores]
+                            logger.info(f"✅ {len(documents)} documents récupérés avec reranking")
+                        except Exception as e2:
+                            logger.warning(f"⚠️ Reranking échoué, fallback vers HNSW+MMR: {e2}")
+                            documents = self.vector_store.search(
+                                state["query"], 
+                                k=k, 
+                                use_mmr=True,
+                                lambda_mult=lambda_mult
+                            )
+                    else:
+                        documents = self.vector_store.search(
+                            state["query"], 
+                            k=k, 
+                            use_mmr=True,
+                            lambda_mult=lambda_mult
+                        )
+            # Fallback vers reranking si pas de recherche hybride
+            elif hasattr(self.vector_store, 'search_with_reranking'):
+                try:
+                    logger.info("🎯 Recherche avec reranking Cross-Encoder")
+                    documents_with_scores = self.vector_store.search_with_reranking(
+                        query=state["query"],
+                        k=k,
+                        rerank_candidates=min(20, k * 3)
+                    )
+                    documents = [doc for doc, score in documents_with_scores]
+                    logger.info(f"✅ {len(documents)} documents récupérés avec reranking")
+                except Exception as e:
+                    logger.warning(f"⚠️ Reranking échoué, fallback vers HNSW+MMR: {e}")
+                    documents = self.vector_store.search(
+                        state["query"], 
+                        k=k, 
+                        use_mmr=True,
+                        lambda_mult=lambda_mult
+                    )
+            else:
+                documents = self.vector_store.search(
+                    state["query"], 
+                    k=k, 
+                    use_mmr=True,
+                    lambda_mult=lambda_mult
+                )
             
             state["retrieved_documents"] = documents
             logger.info(f"✅ {len(documents)} documents récupérés")
@@ -261,7 +442,7 @@ class RAGWorkflow:
         try:
             # Recherche automatique avec plus de diversité pour la comparaison
             logger.info("🔍 Recherche automatique pour comparaison (HNSW + MMR)")
-            documents = self.rag_service.search(
+            documents = self.vector_store.search(
                 state["query"], 
                 k=10, 
                 use_mmr=True,
@@ -320,6 +501,61 @@ class RAGWorkflow:
             state["final_answer"] = "Une erreur s'est produite lors de la génération de la réponse."
             state["confidence_score"] = 0.0
             state["error_message"] = f"Erreur génération: {e}"
+        
+        return state
+    
+    def _self_reflection_node(self, state: RAGState) -> RAGState:
+        """Nœud de self-reflection pour améliorer la qualité des réponses."""
+        logger.info("🤔 Self-reflection de la réponse...")
+        
+        try:
+            draft_answer = state.get("draft_answer", "")
+            query = state.get("query", "")
+            documents = state.get("retrieved_documents", [])
+            intent_analysis = state.get("intent_analysis", {})
+            
+            if not draft_answer:
+                logger.warning("⚠️ Aucune réponse à critiquer")
+                state["final_answer"] = "Aucune réponse générée."
+                return state
+            
+            # Utiliser le self-correction du générateur de réponse
+            if hasattr(self.response_generator, '_self_correct_response'):
+                try:
+                    # Créer un résultat temporaire pour la critique
+                    temp_result = {
+                        "answer": draft_answer,
+                        "citations": state.get("citations", []),
+                        "confidence": state.get("confidence_score", 0.0),
+                        "intent": intent_analysis.get("intent", "unknown"),
+                        "method": "initial"
+                    }
+                    
+                    # Appliquer la self-correction
+                    corrected_result = self.response_generator._self_correct_response(
+                        temp_result, query, documents, 
+                        intent_analysis.get("intent", "unknown"),
+                        intent_analysis.get("confidence", 0.0)
+                    )
+                    
+                    # Mettre à jour l'état avec la réponse corrigée
+                    if corrected_result.get("correction_applied", False):
+                        state["draft_answer"] = corrected_result["answer"]
+                        state["citations"] = corrected_result["citations"]
+                        state["confidence_score"] = corrected_result["confidence"]
+                        logger.info("✅ Réponse améliorée par self-reflection")
+                    else:
+                        logger.info("ℹ️ Réponse validée, pas d'amélioration nécessaire")
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur self-reflection: {e}")
+                    # Continuer avec la réponse originale
+            else:
+                logger.info("ℹ️ Self-correction non disponible, validation basique")
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur self-reflection: {e}")
+            # Continuer avec la réponse originale
         
         return state
     
@@ -423,12 +659,10 @@ class RAGWorkflow:
         else:
             return "standard"
     
-    def _route_after_generation(self, state: RAGState) -> str:
-        """Route après la génération."""
-        if state.get("final_answer"):
-            return "complete"
-        else:
-            return "validate"
+    def _route_after_self_reflection(self, state: RAGState) -> str:
+        """Route après la self-reflection."""
+        # Toujours aller vers la validation après self-reflection
+        return "validate"
     
     def _route_after_validation(self, state: RAGState) -> str:
         """Route après la validation."""
