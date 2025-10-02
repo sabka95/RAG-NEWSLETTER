@@ -1,9 +1,9 @@
-# Dockerfile optimisé pour Apple Silicon M4 avec MLX
+# Dockerfile pour RAG Newsletter
 FROM python:3.11-slim
 
 # Métadonnées
 LABEL maintainer="RAG Newsletter Team"
-LABEL description="RAG Newsletter avec MLX et MCDSE-2B optimisé pour Apple Silicon"
+LABEL description="RAG Newsletter avec support vectoriel et LLM"
 
 # Variables d'environnement
 ENV PYTHONUNBUFFERED=1
@@ -52,9 +52,8 @@ RUN mkdir -p /app/logs
 # Exposition des ports
 EXPOSE 8501 6333
 
-# Variables d'environnement pour MLX
-ENV MLX_ENABLE_GPU=1
-ENV MLX_DEVICE=mps
+# Configuration pour l'environnement de production
+ENV PYTHONPATH=/app/src
 
 # Commande par défaut
 CMD ["poetry", "run", "python", "-m", "rag_newsletter", "--help"]

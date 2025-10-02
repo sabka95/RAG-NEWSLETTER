@@ -7,7 +7,7 @@
 
 import io
 import platform
-from typing import List
+from typing import List, Union
 
 import torch
 from langchain.schema import Document
@@ -21,13 +21,16 @@ IS_APPLE_SILICON = platform.system() == "Darwin" and platform.machine() == "arm6
 IS_LINUX = platform.system() == "Linux"
 
 
-class MLXEmbeddingService:
+class MLXEmbeddingService(Embeddings):
     """
     Service d'embeddings optimisé pour Apple Silicon M4 utilisant MLX.
 
     Ce service utilise le modèle MCDSE-2B-V1 (Multi-modal Cross-Document Search Embeddings)
     pour générer des embeddings de haute qualité à partir d'images de documents PDF.
     Optimisé pour les processeurs Apple Silicon avec Metal Performance Shaders (MPS).
+    
+    Cette classe hérite de langchain.embeddings.base.Embeddings et est directement
+    compatible avec les vector stores LangChain.
 
     Fonctionnalités clés:
     - Embeddings d'images de documents (PDF → image → embedding)
@@ -35,10 +38,19 @@ class MLXEmbeddingService:
     - Optimisations Apple Silicon (MPS, MLX)
     - Normalisation L2 automatique
     - Gestion intelligente des contraintes de pixels du modèle
+    - Compatible LangChain Embeddings (pas de wrapper nécessaire)
 
     Exemple d'utilisation:
         >>> service = MLXEmbeddingService()
-        >>> embeddings = service.embed_documents(documents)
+        
+        # ✅ VOTRE CAS D'USAGE PRINCIPAL : Pages PDF transformées en images
+        >>> pdf_pages = [page1, page2, page3]  # Pages PDF → images (image_data)
+        >>> embeddings = service.embed_pdf_pages(pdf_pages)
+        
+        # ✅ INTERFACE LANGCHAIN : Textes simples (utilise images factices)
+        >>> embeddings = service.embed_documents(["text1", "text2"])
+        
+        # ✅ REQUÊTES de recherche
         >>> query_embedding = service.embed_query("sustainability strategy")
     """
 
@@ -129,82 +141,76 @@ class MLXEmbeddingService:
             raise RuntimeError(f"Impossible de charger le modèle MCDSE: {e}")
 
 
-    def embed_documents(self, documents: List[Document]) -> List[List[float]]:
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
-        Génère les embeddings pour une liste de documents contenant des images.
-
-        Cette méthode traite une liste de documents LangChain, extrait les images
-        depuis leurs métadonnées, et génère des embeddings vectoriels optimisés
-        pour la recherche sémantique.
-
+        Génère des embeddings pour une liste de textes (interface LangChain standard).
+        
+        ⚠️ CONTRAINTE LANGCHAIN : Cette signature est imposée par l'interface Embeddings.
+        Pour vos pages PDF (List[Document] avec image_data), utilisez embed_pdf_pages().
+        
         Args:
-            documents (List[Document]): Liste de documents LangChain contenant des images.
-                                      Chaque document doit avoir 'image_data' dans ses métadonnées.
-
+            texts (List[str]): Liste de textes à embedder
+            
         Returns:
-            List[List[float]]: Liste des embeddings vectoriels (1536 dimensions chacun).
-                              Chaque embedding est normalisé L2.
+            List[List[float]]: Liste des embeddings vectoriels (1536 dimensions chacun)
+        """
+        return [self.embed_query(text) for text in texts]
 
-        Raises:
-            RuntimeError: Si le modèle MCDSE n'est pas initialisé
-            ValueError: Si aucun document valide n'est fourni
-
-        Exemple:
-            >>> service = MLXEmbeddingService()
-            >>> documents = [doc1, doc2, doc3]  # Documents avec image_data
-            >>> embeddings = service.embed_documents(documents)
-            >>> print(f"Généré {len(embeddings)} embeddings de {len(embeddings[0])} dimensions")
+    def embed_pdf_pages(self, documents: List[Document]) -> List[List[float]]:
+        """
+        Génère les embeddings pour vos pages PDF transformées en images.
+        
+        Cette méthode traite les pages PDF qui ont été converties en images
+        par le document_processor et stockées comme image_data.
+        
+        Args:
+            documents (List[Document]): Pages PDF converties en images (image_data dans metadata)
+            
+        Returns:
+            List[List[float]]: Liste des embeddings vectoriels (1536 dimensions chacun)
         """
         if not self.model or not self.processor:
-            raise RuntimeError(
-                "Modèle MCDSE non initialisé. Appelez d'abord __init__()"
-            )
+            raise RuntimeError("Modèle MCDSE non initialisé. Appelez d'abord __init__()")
 
         if not documents:
-            raise ValueError("Aucun document fourni")
+            return []
 
         embeddings = []
         successful_embeddings = 0
 
-        logger.info(f"🖼️  Génération des embeddings pour {len(documents)} documents...")
+        logger.info(f"🖼️  Génération des embeddings pour {len(documents)} pages PDF...")
 
         for i, doc in enumerate(documents):
             try:
-                # Récupérer les données de l'image depuis les métadonnées
+                # Récupérer l'image de la page PDF depuis les métadonnées
                 image_data = doc.metadata.get("image_data")
                 if not image_data:
                     logger.warning(
-                        f"Pas de données d'image pour le document {doc.metadata.get('source_file', 'inconnu')}"
+                        f"Pas d'image pour la page {doc.metadata.get('source_file', 'inconnu')}"
                     )
                     continue
 
-                # Convertir les bytes en image PIL (déjà validé par document_processor)
+                # Convertir les bytes en image PIL
                 try:
                     image = Image.open(io.BytesIO(image_data))
+                    embedding = self._encode_document(image)
+                    embeddings.append(embedding)
+                    successful_embeddings += 1
                 except Exception as img_error:
                     logger.warning(
-                        f"Erreur lors du traitement de l'image pour {doc.metadata.get('source_file', 'inconnu')}: {img_error}"
+                        f"Erreur lors du traitement de la page {doc.metadata.get('source_file', 'inconnu')}: {img_error}"
                     )
                     continue
-
-                # Générer l'embedding pour l'image
-                embedding = self._encode_document(image)
-                embeddings.append(embedding)
-                successful_embeddings += 1
 
                 # Afficher la progression tous les 10 documents
                 if (i + 1) % 10 == 0:
-                    logger.info(
-                        f"📊 Progression: {i + 1}/{len(documents)} documents traités"
-                    )
+                    logger.info(f"📊 Progression: {i + 1}/{len(documents)} pages traitées")
 
             except Exception as e:
-                logger.error(f"Erreur lors de l'embedding du document {i}: {e}")
+                logger.error(f"Erreur lors de l'embedding de la page {i}: {e}")
                 continue
 
-        logger.info(
-            f"✅ Embeddings générés avec succès: {successful_embeddings}/{len(documents)} vecteurs"
-        )
+        logger.info(f"✅ Embeddings générés: {successful_embeddings}/{len(documents)} pages PDF")
         return embeddings
 
     def _encode_document(self, image: Image.Image) -> List[float]:
@@ -354,109 +360,171 @@ class MLXEmbeddingService:
             return [0.0] * self.dimension
 
 
-class LangChainMLXEmbeddings(Embeddings):
+class LinuxEmbeddingService(Embeddings):
     """
-    Wrapper pour MLXEmbeddingService compatible avec l'interface LangChain Embeddings.
+    Service d'embeddings pour Linux/CPU utilisant le même modèle MCDSE que MLXEmbeddingService.
     
-    Cette classe permet d'utiliser MLXEmbeddingService avec les vector stores LangChain
-    en implémentant l'interface standard Embeddings.
-    """
-    
-    def __init__(self, mlx_service: MLXEmbeddingService):
-        """
-        Initialise le wrapper avec un service MLX.
-        
-        Args:
-            mlx_service: Instance de MLXEmbeddingService
-        """
-        self.mlx_service = mlx_service
-    
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """
-        Génère des embeddings pour une liste de textes.
-        
-        Args:
-            texts: Liste de textes à embedder
-            
-        Returns:
-            Liste d'embeddings (vecteurs de 1536 dimensions)
-        """
-        # Créer des documents LangChain temporaires
-        documents = [Document(page_content=text, metadata={}) for text in texts]
-        return self.mlx_service.embed_documents(documents)
-    
-    def embed_query(self, text: str) -> List[float]:
-        """
-        Génère un embedding pour une requête.
-        
-        Args:
-            text: Texte de la requête
-            
-        Returns:
-            Embedding (vecteur de 1536 dimensions)
-        """
-        return self.mlx_service.embed_query(text)
-
-
-class LinuxEmbeddingService:
-    """
-    Service d'embeddings alternatif pour Linux utilisant sentence-transformers.
-    
-    Cette classe fournit des embeddings de qualité similaire à MLX mais compatible
-    avec les environnements Linux, notamment dans les pipelines CI/CD.
+    Cette classe utilise PyTorch CPU au lieu de MPS pour les environnements Linux
+    (serveurs, CI/CD, etc.). Compatible avec le pipeline d'images PDF.
     """
     
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2", dimension: int = 384):
+    def __init__(self, model_name: str = "marco/mcdse-2b-v1", dimension: int = 1536):
         """
-        Initialise le service d'embeddings pour Linux.
+        Initialise le service d'embeddings pour Linux/CPU.
         
         Args:
-            model_name: Nom du modèle sentence-transformers à utiliser
-            dimension: Dimension des embeddings de sortie
+            model_name: Nom du modèle MCDSE à utiliser
+            dimension: Dimension des embeddings de sortie (1536 pour MCDSE)
         """
         self.model_name = model_name
         self.dimension = dimension
         self.model = None
+        self.processor = None
+        
+        # Prompts identiques à MLXEmbeddingService
+        self.document_prompt = (
+            "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+            "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>"
+            "What is shown in this image?<|im_end|>\n<|endoftext|>"
+        )
+        self.query_prompt = (
+            "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+            "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>"
+            "Query: %s<|im_end|>\n<|endoftext|>"
+        )
+        
         self._initialize_model()
     
     def _initialize_model(self):
-        """Initialise le modèle sentence-transformers."""
+        """Initialise le modèle MCDSE sur CPU."""
         try:
-            from sentence_transformers import SentenceTransformer
-            logger.info(f"Chargement du modèle sentence-transformers: {self.model_name}")
-            self.model = SentenceTransformer(self.model_name)
-            logger.info("✅ Modèle sentence-transformers chargé avec succès!")
-        except ImportError:
-            logger.warning("⚠️ sentence-transformers non disponible, utilisation d'un fallback")
-            self.model = None
+            logger.info(f"🐧 Chargement du modèle MCDSE pour Linux/CPU: {self.model_name}")
+            
+            min_pixels = 1 * 28 * 28
+            max_pixels = 960 * 28 * 28
+            
+            self.processor = AutoProcessor.from_pretrained(
+                self.model_name, min_pixels=min_pixels, max_pixels=max_pixels
+            )
+            
+            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float32,  # float32 pour CPU (pas bfloat16)
+                low_cpu_mem_usage=True,
+            ).eval()
+            
+            # Garder sur CPU
+            logger.info("✅ Modèle MCDSE chargé avec succès sur CPU!")
+            
+            self.model.padding_side = "left"
+            self.processor.tokenizer.padding_side = "left"
+            
         except Exception as e:
-            logger.error(f"❌ Erreur lors du chargement du modèle: {e}")
+            logger.error(f"❌ Erreur lors du chargement du modèle MCDSE: {e}")
             self.model = None
+            self.processor = None
     
-    def embed_documents(self, documents: List[Document]) -> List[List[float]]:
-        """Génère les embeddings pour une liste de documents."""
-        if not self.model:
-            # Fallback: retourner des embeddings aléatoires
-            logger.warning("⚠️ Modèle non disponible, utilisation d'embeddings aléatoires")
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Génère des embeddings pour une liste de textes (interface LangChain)."""
+        return [self.embed_query(text) for text in texts]
+    
+    def embed_pdf_pages(self, documents: List[Document]) -> List[List[float]]:
+        """Génère les embeddings pour vos pages PDF transformées en images (CPU)."""
+        if not self.model or not self.processor:
+            logger.error("❌ Modèle MCDSE non initialisé sur CPU")
             return [[0.0] * self.dimension for _ in documents]
         
+        if not documents:
+            return []
+        
+        embeddings = []
+        successful_embeddings = 0
+        
+        logger.info(f"🖼️  Génération des embeddings pour {len(documents)} pages PDF (CPU)...")
+        
+        for i, doc in enumerate(documents):
+            try:
+                image_data = doc.metadata.get("image_data")
+                if not image_data:
+                    logger.warning(f"Pas d'image pour la page {doc.metadata.get('source_file', 'inconnu')}")
+                    continue
+                
+                try:
+                    image = Image.open(io.BytesIO(image_data))
+                    embedding = self._encode_document_cpu(image)
+                    embeddings.append(embedding)
+                    successful_embeddings += 1
+                except Exception as img_error:
+                    logger.warning(f"Erreur lors du traitement de la page: {img_error}")
+                    continue
+                
+                if (i + 1) % 10 == 0:
+                    logger.info(f"📊 Progression: {i + 1}/{len(documents)} pages traitées")
+            
+            except Exception as e:
+                logger.error(f"Erreur lors de l'embedding de la page {i}: {e}")
+                continue
+        
+        logger.info(f"✅ Embeddings générés (CPU): {successful_embeddings}/{len(documents)} pages PDF")
+        return embeddings
+    
+    def _encode_document_cpu(self, image: Image.Image) -> List[float]:
+        """Encode une image en embedding sur CPU."""
         try:
-            texts = [doc.page_content for doc in documents]
-            embeddings = self.model.encode(texts)
-            return embeddings.tolist()
+            inputs = self.processor(
+                text=[self.document_prompt],
+                images=[image],
+                videos=None,
+                padding="longest",
+                return_tensors="pt",
+            )
+            
+            # Rester sur CPU (pas de .to("mps"))
+            cache_position = torch.arange(0, 1)
+            inputs = self.model.prepare_inputs_for_generation(
+                **inputs, cache_position=cache_position, use_cache=False
+            )
+            
+            with torch.no_grad():
+                output = self.model(**inputs, return_dict=True, output_hidden_states=True)
+                embeddings = output.hidden_states[-1][:, -1]
+                normalized_embedding = torch.nn.functional.normalize(
+                    embeddings[:, : self.dimension], p=2, dim=-1
+                )
+                return normalized_embedding.cpu().squeeze().tolist()
+        
         except Exception as e:
-            logger.error(f"Erreur lors de la génération des embeddings: {e}")
-            return [[0.0] * self.dimension for _ in documents]
+            logger.error(f"Erreur lors de l'encodage CPU: {e}")
+            return [0.0] * self.dimension
     
     def embed_query(self, query: str) -> List[float]:
-        """Génère l'embedding pour une requête textuelle."""
-        if not self.model:
-            logger.warning("⚠️ Modèle non disponible, utilisation d'un embedding zéro")
+        """Génère l'embedding pour une requête textuelle (CPU)."""
+        if not self.model or not self.processor:
             return [0.0] * self.dimension
         
         try:
-            embedding = self.model.encode([query])
-            return embedding[0].tolist()
+            dummy_image = Image.new("RGB", (56, 56))
+            inputs = self.processor(
+                text=[self.query_prompt % query],
+                images=[dummy_image],
+                videos=None,
+                padding="longest",
+                return_tensors="pt",
+            )
+            
+            cache_position = torch.arange(0, 1)
+            inputs = self.model.prepare_inputs_for_generation(
+                **inputs, cache_position=cache_position, use_cache=False
+            )
+            
+            with torch.no_grad():
+                output = self.model(**inputs, return_dict=True, output_hidden_states=True)
+                embeddings = output.hidden_states[-1][:, -1]
+                normalized_embedding = torch.nn.functional.normalize(
+                    embeddings[:, : self.dimension], p=2, dim=-1
+                )
+                return normalized_embedding.cpu().squeeze().tolist()
+        
         except Exception as e:
             logger.error(f"Erreur lors de la génération de l'embedding de requête: {e}")
             return [0.0] * self.dimension

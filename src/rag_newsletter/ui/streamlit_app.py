@@ -205,21 +205,19 @@ def initialize_rag_service():
     """Initialise le service RAG avec cache."""
     try:
         logger.info("🚀 Initialisation du service RAG...")
-        # Utiliser le service vectoriel optimisé avec BM25 et reranking
+        # Utiliser le service vectoriel optimisé avec MMR
         from rag_newsletter.embeddings.vector_store import OptimizedVectorStoreService
-        from rag_newsletter.embeddings.embedding_service import LangChainMLXEmbeddings
+        from rag_newsletter.embeddings import get_embedding_service
         
-        # Créer le service d'embeddings avec MLX
-        from rag_newsletter.embeddings.embedding_service import MLXEmbeddingService
-        mlx_service = MLXEmbeddingService()
-        embedding_service = LangChainMLXEmbeddings(mlx_service=mlx_service)
+        # Auto-détection du service d'embeddings (Apple Silicon ou Linux)
+        embedding_service = get_embedding_service()
         
-        # Créer le service vectoriel optimisé
+        # Créer le service vectoriel optimisé (MMR toujours activé)
         rag_service = OptimizedVectorStoreService(
+            qdrant_url="http://localhost:6333",
+            collection_name="test_hseq",  # Utiliser la collection de test
             embedding_service=embedding_service,
-            use_bm25=True,
-            use_reranking=True,
-            hybrid_alpha=0.7
+            use_binary_quantization=True
         )
         logger.info("✅ Service RAG initialisé avec succès")
         return rag_service

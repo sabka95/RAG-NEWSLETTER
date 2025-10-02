@@ -356,74 +356,32 @@ class RAGWorkflow:
                 except Exception as e:
                     logger.warning(f"⚠️ Erreur reranking: {e}")
             
-            # Fallback vers recherche standard HNSW + MMR
-            logger.info("🔍 Recherche automatique (HNSW + MMR)")
-            
-            # Essayer d'abord avec recherche hybride si disponible
-            if hasattr(self.vector_store, 'hybrid_search'):
-                try:
-                    logger.info("🔀 Recherche hybride (embeddings + BM25)")
-                    documents = self.vector_store.hybrid_search(
-                        query=state["query"],
-                        k=k,
-                        use_mmr=True,
-                        lambda_mult=lambda_mult
-                    )
-                    logger.info(f"✅ {len(documents)} documents récupérés avec recherche hybride")
-                except Exception as e:
-                    logger.warning(f"⚠️ Recherche hybride échouée, fallback vers reranking: {e}")
-                    # Fallback vers reranking
-                    if hasattr(self.vector_store, 'search_with_reranking'):
-                        try:
-                            logger.info("🎯 Recherche avec reranking Cross-Encoder")
-                            documents_with_scores = self.vector_store.search_with_reranking(
-                                query=state["query"],
-                                k=k,
-                                rerank_candidates=min(20, k * 3)
-                            )
-                            documents = [doc for doc, score in documents_with_scores]
-                            logger.info(f"✅ {len(documents)} documents récupérés avec reranking")
-                        except Exception as e2:
-                            logger.warning(f"⚠️ Reranking échoué, fallback vers HNSW+MMR: {e2}")
-                            documents = self.vector_store.search(
-                                state["query"], 
-                                k=k, 
-                                use_mmr=True,
-                                lambda_mult=lambda_mult
-                            )
-                    else:
-                        documents = self.vector_store.search(
-                            state["query"], 
-                            k=k, 
-                            use_mmr=True,
-                            lambda_mult=lambda_mult
-                        )
-            # Fallback vers reranking si pas de recherche hybride
-            elif hasattr(self.vector_store, 'search_with_reranking'):
-                try:
-                    logger.info("🎯 Recherche avec reranking Cross-Encoder")
-                    documents_with_scores = self.vector_store.search_with_reranking(
-                        query=state["query"],
-                        k=k,
-                        rerank_candidates=min(20, k * 3)
-                    )
-                    documents = [doc for doc, score in documents_with_scores]
-                    logger.info(f"✅ {len(documents)} documents récupérés avec reranking")
-                except Exception as e:
-                    logger.warning(f"⚠️ Reranking échoué, fallback vers HNSW+MMR: {e}")
-                    documents = self.vector_store.search(
-                        state["query"], 
-                        k=k, 
-                        use_mmr=True,
-                        lambda_mult=lambda_mult
-                    )
-            else:
-                documents = self.vector_store.search(
-                    state["query"], 
-                    k=k, 
-                    use_mmr=True,
+            # Fallback vers recherche standard MMR (LangChain officiel)
+            logger.info("🔍 Recherche MMR LangChain (HNSW + Binary Quantization)")
+            try:
+                # Utiliser similarity_search_with_score (MMR toujours activé)
+                documents_with_scores = self.vector_store.similarity_search_with_score(
+                    query=state["query"],
+                    k=k,
                     lambda_mult=lambda_mult
                 )
+                logger.info(f"✅ {len(documents_with_scores)} documents récupérés avec MMR")
+                
+                # Convertir en format attendu
+                documents = []
+                for doc, score in documents_with_scores:
+                    doc_dict = {
+                        "content": doc.page_content,
+                        "source": doc.metadata.get("source_file", "Document inconnu"),
+                        "page": doc.metadata.get("page_number", "N/A"),
+                        "score": float(score)
+                    }
+                    documents.append(doc_dict)
+            except Exception as e:
+                logger.error(f"❌ Erreur recherche MMR: {e}")
+                state["error_message"] = f"Erreur de récupération de documents: {e}"
+                state["retrieved_documents"] = []
+                return state
             
             state["retrieved_documents"] = documents
             logger.info(f"✅ {len(documents)} documents récupérés")

@@ -1,9 +1,13 @@
-from .embedding_service import EmbeddingService, MLXEmbeddingService
-from .vector_store import OptimizedVectorStoreService, VectorStoreService
+from .embedding_service import (
+    MLXEmbeddingService,
+    LinuxEmbeddingService,
+    get_embedding_service,
+)
+from .vector_store import OptimizedVectorStoreService
 
 __all__ = [
     "MLXEmbeddingService",
-    "EmbeddingService",
+    "LinuxEmbeddingService",
+    "get_embedding_service",
     "OptimizedVectorStoreService",
-    "VectorStoreService",
 ]

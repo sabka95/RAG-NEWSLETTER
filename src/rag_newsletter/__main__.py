@@ -39,18 +39,15 @@ def main():
     Fonctionnalités disponibles:
     - Téléchargement de documents depuis SharePoint
     - Ingestion de documents dans le vector store Qdrant
-    - Recherche sémantique avec MMR (Maximum Marginal Relevance)
-    - Comparaison de documents
-    - Filtrage par documents spécifiques
     - Statistiques de la collection
+    
+    Note: Pour la recherche et l'analyse, utilisez l'interface Streamlit:
+        streamlit run src/rag_newsletter/ui/streamlit_app.py
 
     Exemples d'utilisation:
-        python -m rag_newsletter --download --max 50                    # Télécharger 50 documents
-        python -m rag_newsletter --ingest --batch-size 5               # Ingérer avec des lots de 5
-        python -m rag_newsletter --search "sustainability strategy"    # Rechercher des documents
-        python -m rag_newsletter --search-mmr --lambda 0.5             # Recherche MMR avec diversité
-        python -m rag_newsletter --compare doc1.pdf doc2.pdf           # Comparer deux documents
-        python -m rag_newsletter --stats                                # Afficher les statistiques
+        python -m rag_newsletter --download --max 50      # Télécharger 50 documents
+        python -m rag_newsletter --ingest --batch-size 5  # Ingérer avec des lots de 5
+        python -m rag_newsletter --stats                  # Afficher les statistiques
     """
     # Charger les variables d'environnement depuis .env
     load_dotenv()
@@ -82,26 +79,6 @@ def main():
         action="store_true",
         help="Ingérer les fichiers dans le vector store optimisé",
     )
-    p.add_argument("--search", type=str, help="Rechercher dans les documents indexés")
-    p.add_argument(
-        "--search-mmr",
-        action="store_true",
-        help="Utiliser la recherche MMR (Maximum Marginal Relevance)",
-    )
-    p.add_argument(
-        "--lambda",
-        type=float,
-        default=0.7,
-        help="Facteur de diversité pour MMR (0.0-1.0)",
-    )
-    p.add_argument(
-        "--compare", nargs=2, metavar=("DOC1", "DOC2"), help="Comparer deux documents"
-    )
-    p.add_argument(
-        "--filter-docs",
-        nargs="+",
-        help="Filtrer la recherche à des documents spécifiques",
-    )
     p.add_argument(
         "--list-drives",
         action="store_true",
@@ -132,9 +109,6 @@ def main():
         "--collection", default="rag_newsletter", help="Nom de la collection Qdrant"
     )
     p.add_argument(
-        "--model", default="marco/mcdse-2b-v1", help="Modèle d'embedding à utiliser"
-    )
-    p.add_argument(
         "--no-binary-quantization",
         action="store_true",
         help="Désactiver la quantization binaire",
@@ -151,19 +125,17 @@ def main():
         rag_service = OptimizedRAGIngestionService(
             qdrant_url=a.qdrant_url,
             collection_name=a.collection,
-            model_name=a.model,
             use_binary_quantization=not a.no_binary_quantization,
-            use_mmr=True,  # Activer MMR pour la diversité des résultats
         )
 
         # Afficher les informations de configuration
         logger.info("🚀 RAG Newsletter Optimisé - Configuration:")
-        logger.info(f"   📱 Modèle: {a.model}")
+        logger.info(f"   📱 Modèle: marco/mcdse-2b-v1 (auto-détecté)")
         logger.info(f"   🔗 Qdrant: {a.qdrant_url}")
         logger.info(f"   📚 Collection: {a.collection}")
         logger.info(f"   ⚡ Binary Quantization: {not a.no_binary_quantization}")
-        logger.info("   🎯 MMR Search: True")
-        logger.info("   🍎 Optimisé pour Apple Silicon M4")
+        logger.info("   🎯 MMR Search: Always enabled")
+        logger.info("   🍎 Platform: Auto-detected (Apple Silicon / Linux)")
 
         # Gestion des drives SharePoint
         if a.list_drives or a.download or a.ingest:
@@ -257,76 +229,17 @@ def main():
             else:
                 logger.error(f"   ❌ Erreur: {result['message']}")
 
-        # Recherche optimisée dans les documents indexés
-        if a.search:
-            logger.info(f"\n🔍 Recherche optimisée: '{a.search}'")
-
-            # Déterminer le type de recherche selon les paramètres
-            if a.search_mmr:
-                logger.info(f"🎯 Mode MMR avec lambda={getattr(a, 'lambda', 0.7)}")
-                search_results = rag_service.search(
-                    query=a.search,
-                    k=5,
-                    use_mmr=True,
-                    lambda_mult=getattr(a, "lambda", 0.7),
-                )
-            elif a.filter_docs:
-                logger.info(f"📋 Recherche filtrée aux documents: {a.filter_docs}")
-                search_results = rag_service.search_with_document_filter(
-                    query=a.search, document_names=a.filter_docs, k=5
-                )
-            else:
-                logger.info("🔍 Recherche HNSW standard")
-                search_results = rag_service.search(query=a.search, k=5)
-
-            # Afficher les résultats de la recherche
-            logger.info(f"\n✅ Résultats trouvés: {len(search_results)}")
-            for i, result in enumerate(search_results, 1):
-                logger.info(f"\n--- Résultat {i} ---")
-                logger.info(f"   📊 Score: {result['score']:.3f}")
-                logger.info(f"   📄 Source: {result['source']}")
-                logger.info(f"   📃 Page: {result['page']}")
-                logger.info(f"   🔢 Chunk: {result['chunk_index']}")
-                logger.info(f"   📝 Contenu: {result['content'][:200]}...")
-
-        # Comparaison de documents spécifiques
-        if a.compare:
-            doc1, doc2 = a.compare
-            logger.info(f"\n🔄 Comparaison: {doc1} vs {doc2}")
-            logger.info(f"   🔍 Requête: '{a.search or 'Analyse générale'}'")
-
-            # Effectuer la comparaison des documents
-            comparison_results = rag_service.compare_documents(
-                query=a.search or "Analyse générale",
-                document_pairs=[(doc1, doc2)],
-                k_per_doc=3,
-            )
-
-            for comparison_key, results in comparison_results.items():
-                logger.info(f"\n📊 Résultats de comparaison: {comparison_key}")
-                logger.info(f"   📄 {doc1}: {len(results[doc1])} résultats")
-                logger.info(f"   📄 {doc2}: {len(results[doc2])} résultats")
-
-                if results["similarities"]:
-                    logger.info(f"   ✅ Similarités: {results['similarities']}")
-                if results["differences"]:
-                    logger.info(f"   ⚠️  Différences: {results['differences']}")
-
         # Statistiques de la collection Qdrant
         if a.stats:
             logger.info("\n📊 Statistiques de la collection:")
-            stats = rag_service.get_collection_stats()
-            logger.info(f"   📚 Collection: {stats['collection_name']}")
-            logger.info(f"   🔗 URL: {stats['qdrant_url']}")
-            logger.info(f"   🤖 Modèle: {stats['model']}")
-            logger.info(f"   ⚡ Optimisations: {stats['optimizations']}")
-
-            if stats.get("collection_info"):
-                info = stats["collection_info"]
-                logger.info(f"   📄 Vecteurs: {info.get('vectors_count', 'N/A')}")
-                logger.info(f"   📊 Points: {info.get('points_count', 'N/A')}")
-                logger.info(f"   📈 Segments: {info.get('segments_count', 'N/A')}")
-                logger.info(f"   ✅ Statut: {info.get('status', 'N/A')}")
+            stats = rag_service.vector_store.get_collection_info()
+            logger.info(f"   📚 Collection: {stats.get('name', 'N/A')}")
+            logger.info(f"   📄 Vecteurs: {stats.get('vectors_count', 'N/A')}")
+            logger.info(f"   📊 Points: {stats.get('points_count', 'N/A')}")
+            logger.info(f"   📈 Segments: {stats.get('segments_count', 'N/A')}")
+            logger.info(f"   ✅ Statut: {stats.get('status', 'N/A')}")
+            logger.info(f"   💾 Taille disque: {stats.get('disk_data_size', 0) / 1024:.2f} KB")
+            logger.info(f"   🧠 Taille RAM: {stats.get('ram_data_size', 0) / 1024:.2f} KB")
 
     except Exception as e:
         logger.error(f"❌ Erreur: {e}")

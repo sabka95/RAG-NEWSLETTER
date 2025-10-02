@@ -13,12 +13,12 @@ Un chatbot d'entreprise RAG (Retrieval-Augmented Generation) optimisé pour Appl
 - **📊 RAGAS Evaluation** : Évaluation automatique de la qualité
 
 ### 🔧 Optimisations Techniques
-- **🤖 Modèle MCDSE-2B-V1** : Embeddings de documents basés sur des images avec MLX
-- **⚡ Optimisé Apple Silicon** : Utilisation native du GPU M4 avec Metal Performance Shaders
+- **🤖 Modèle MCDSE-2B-V1** : Embeddings multimodaux (image + texte) pour pages PDF
+- **⚡ Cross-Platform** : Apple Silicon (MLX/MPS) + Linux (CPU) - auto-détection
 - **🔍 HNSW Indexing** : Recherche vectorielle ultra-rapide avec Qdrant
 - **💾 Binary Quantization** : Réduction de 75% de l'espace de stockage
-- **🎯 MMR Search** : Maximum Marginal Relevance pour des résultats diversifiés
-- **🔄 Reranking Cross-Encoder** : Amélioration de la pertinence des résultats
+- **🎯 MMR Search** : Implémentation LangChain officielle, toujours activée
+- **📄 Pipeline Image** : PDF → Image → Embedding (pas de stockage image redondant)
 - **🌍 Détection de Langue** : Réponses automatiques en français/anglais
 
 ### 📚 Intégrations Enterprise
@@ -30,13 +30,14 @@ Un chatbot d'entreprise RAG (Retrieval-Augmented Generation) optimisé pour Appl
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   SharePoint    │───▶│  Document        │───▶│  MCDSE-2B-V1    │
-│   (OAuth2)      │    │  Processor       │    │  + MLX          │
+│   SharePoint    │───▶│  PDF → Image     │───▶│  MCDSE-2B-V1    │
+│   (OAuth2)      │    │  Processor       │    │  Embedding      │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                                                          │
+                                                         ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Streamlit UI  │◀───│  RAG Service     │◀───│  Qdrant HNSW    │
-│   (Future)      │    │  + MMR           │    │  + Binary Q     │
+│   Streamlit UI  │◀───│  RAG Workflow    │◀───│  Qdrant HNSW    │
+│   + LangGraph   │    │  + MMR LangChain │    │  + Binary Q     │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
@@ -139,46 +140,40 @@ poetry run python -m rag_newsletter --download --extensions .pdf .docx --max 20
 ### 3. Ingestion optimisée
 
 ```bash
-# Ingestion standard avec optimisations
+# Ingestion standard avec optimisations (MMR toujours activé)
 poetry run python -m rag_newsletter --ingest --batch-size 10
 
 # Ingestion sans binary quantization (plus de RAM)
 poetry run python -m rag_newsletter --ingest --no-binary-quantization
 
-# Ingestion avec modèle personnalisé
-poetry run python -m rag_newsletter --ingest --model "marco/mcdse-2b-v1"
+# Télécharger + ingérer en une commande
+poetry run python -m rag_newsletter --download --ingest --max 20
 ```
 
-### 4. Recherche avancée
+### 4. Interface Streamlit (Recommandé)
 
-#### Recherche standard HNSW
-```bash
-poetry run python -m rag_newsletter --search "Quels sont les objectifs 2025?"
-```
-
-#### Recherche MMR (diversifiée)
-```bash
-# Recherche avec diversité maximale
-poetry run python -m rag_newsletter --search "sustainability" --search-mmr --lambda 0.3
-
-# Recherche avec pertinence maximale
-poetry run python -m rag_newsletter --search "sustainability" --search-mmr --lambda 0.9
-```
-
-#### Recherche filtrée par document
-```bash
-# Limiter à des documents spécifiques
-poetry run python -m rag_newsletter --search "budget 2025" --filter-docs "budget_2025.pdf" "objectives_2025.pdf"
-```
-
-### 5. Comparaison de documents
+Pour la recherche, l'analyse et la comparaison de documents, utilisez l'interface Streamlit :
 
 ```bash
-# Comparer deux documents sur une requête
-poetry run python -m rag_newsletter --search "sustainability goals" --compare "sustainability_2024.pdf" "sustainability_2025.pdf"
+streamlit run src/rag_newsletter/ui/streamlit_app.py
 ```
 
-### 6. Analyse d'Intention Hybride Avancée
+Fonctionnalités de l'interface :
+- 💬 Chat interactif avec historique
+- 🔍 Recherche MMR avec diversité
+- 📊 Comparaison multi-documents
+- 📈 Panneau d'administration
+- 🔒 Filtres de sécurité
+
+### 5. Statistiques de la collection
+
+```bash
+poetry run python -m rag_newsletter --stats
+```
+
+## 🧪 Démonstrations et Tests
+
+### 1. Analyse d'Intention Hybride Avancée
 
 ```bash
 # Démonstration du système d'analyse d'intention
@@ -202,12 +197,9 @@ print(f'Taux de succès: {results[\"success_rate\"]:.1%}')
 "
 ```
 
-### 7. Statistiques et monitoring
+### 2. Monitoring
 
 ```bash
-# Afficher les statistiques de la collection
-poetry run python -m rag_newsletter --stats
-
 # Dashboard Qdrant (avec docker-compose)
 docker-compose --profile monitoring up -d
 # Accès: http://localhost:8080

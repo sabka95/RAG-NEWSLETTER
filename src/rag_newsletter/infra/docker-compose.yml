@@ -1,4 +1,4 @@
-# Docker Compose optimisé pour Apple Silicon M4
+# Docker Compose pour RAG Newsletter
 version: '3.8'
 
 services:
@@ -19,8 +19,6 @@ services:
     depends_on:
       - qdrant
     environment:
-      - MLX_ENABLE_GPU=1
-      - MLX_DEVICE=mps
       - PYTHONPATH=/app/src
     command: ["poetry", "run", "python", "-m", "rag_newsletter", "--help"]
     restart: unless-stopped
