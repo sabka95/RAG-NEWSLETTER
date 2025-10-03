@@ -44,12 +44,8 @@ services:
       - QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_REQUESTS=1000
       - QDRANT__STORAGE__PERFORMANCE__MAX_OPTIMIZATION_THREADS=4
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    # No health check - Qdrant image doesn't include curl
+    # Container is considered healthy if it stays running
 
   # Service optionnel pour le monitoring
   qdrant-dashboard:
