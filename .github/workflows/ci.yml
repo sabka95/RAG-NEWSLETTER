@@ -227,6 +227,12 @@ jobs:
         image: qdrant/qdrant:v1.7.4
         ports:
           - 6333:6333
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
     
     steps:
       - uses: actions/checkout@v4
@@ -459,6 +465,12 @@ jobs:
         image: qdrant/qdrant:v1.7.4
         ports:
           - 6333:6333
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
     
     steps:
       - uses: actions/checkout@v4
@@ -478,22 +490,27 @@ jobs:
       
       - run: poetry install --no-interaction
 
-      - name: Wait for Qdrant
+      - name: Wait for Qdrant to be Healthy
         run: |
-          echo "Waiting for Qdrant to be ready..."
-          sleep 5  # Initial wait for container startup
+          echo "Waiting for Qdrant service to be healthy..."
+          # GitHub Actions services have health checks
+          # But we add a verification step to be sure
           
-          for i in {1..60}; do
-            if curl -sf http://localhost:6333/health > /dev/null 2>&1 || \
-               curl -sf http://localhost:6333/ > /dev/null 2>&1; then
-              echo "✅ Qdrant is ready!"
-              break
+          for i in {1..30}; do
+            if curl -sf http://localhost:6333/health > /dev/null 2>&1; then
+              echo "✅ Qdrant health check passed!"
+              curl -s http://localhost:6333/health | head -5
+              exit 0
             fi
-            if [ $i -eq 60 ]; then
-              echo "❌ Qdrant timeout - trying to continue anyway"
-              break
+            if [ $i -eq 30 ]; then
+              echo "❌ Qdrant health check failed after 60s"
+              echo "Checking service status..."
+              docker ps -a | grep qdrant || echo "Container not found"
+              echo "Checking port..."
+              netstat -tulpn 2>/dev/null | grep 6333 || ss -tulpn 2>/dev/null | grep 6333 || echo "Port 6333 not listening"
+              exit 1
             fi
-            [ $((i % 10)) -eq 0 ] && echo "⏳ Waiting... (${i}/60)"
+            [ $((i % 5)) -eq 0 ] && echo "⏳ Waiting for health check... (${i}/30)"
             sleep 2
           done
 
@@ -549,6 +566,12 @@ jobs:
         image: qdrant/qdrant:v1.7.4
         ports:
           - 6333:6333
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
     
     steps:
       - uses: actions/checkout@v4
