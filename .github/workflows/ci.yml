@@ -227,12 +227,8 @@ jobs:
         image: qdrant/qdrant:v1.7.4
         ports:
           - 6333:6333
-        options: >-
-          --health-cmd "curl -f http://localhost:6333/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --health-start-period 30s
+        # No health check - Qdrant doesn't have curl installed
+        # We'll check readiness in the wait step instead
     
     steps:
       - uses: actions/checkout@v4
@@ -465,12 +461,8 @@ jobs:
         image: qdrant/qdrant:v1.7.4
         ports:
           - 6333:6333
-        options: >-
-          --health-cmd "curl -f http://localhost:6333/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --health-start-period 30s
+        # No health check - Qdrant doesn't have curl installed
+        # We'll check readiness in the wait step instead
     
     steps:
       - uses: actions/checkout@v4
@@ -566,12 +558,8 @@ jobs:
         image: qdrant/qdrant:v1.7.4
         ports:
           - 6333:6333
-        options: >-
-          --health-cmd "curl -f http://localhost:6333/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --health-start-period 30s
+        # No health check - Qdrant doesn't have curl installed
+        # We'll check readiness in the wait step instead
     
     steps:
       - uses: actions/checkout@v4
