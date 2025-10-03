@@ -482,27 +482,50 @@ jobs:
       
       - run: poetry install --no-interaction
 
-      - name: Wait for Qdrant to be Healthy
+      - name: Wait for Qdrant API to be Ready
         run: |
-          echo "Waiting for Qdrant service to be healthy..."
-          # GitHub Actions services have health checks
-          # But we add a verification step to be sure
+          echo "Waiting for Qdrant API to respond..."
           
-          for i in {1..30}; do
-            if curl -sf http://localhost:6333/health > /dev/null 2>&1; then
-              echo "✅ Qdrant health check passed!"
-              curl -s http://localhost:6333/health | head -5
+          # Give Qdrant time to initialize
+          sleep 15
+          
+          for i in {1..60}; do
+            # Try to get collections - this proves API is fully ready
+            if curl -sf http://localhost:6333/collections > /dev/null 2>&1; then
+              echo "✅ Qdrant API is ready!"
+              echo "Collections endpoint response:"
+              curl -s http://localhost:6333/collections
+              echo ""
+              echo "Qdrant info:"
+              curl -s http://localhost:6333/
               exit 0
             fi
-            if [ $i -eq 30 ]; then
-              echo "❌ Qdrant health check failed after 60s"
-              echo "Checking service status..."
-              docker ps -a | grep qdrant || echo "Container not found"
-              echo "Checking port..."
-              netstat -tulpn 2>/dev/null | grep 6333 || ss -tulpn 2>/dev/null | grep 6333 || echo "Port 6333 not listening"
+            
+            # Also try root endpoint as fallback
+            if curl -sf http://localhost:6333/ > /dev/null 2>&1; then
+              VERSION=$(curl -s http://localhost:6333/ | grep -o '"version":"[^"]*"' || echo "")
+              if [ -n "$VERSION" ]; then
+                echo "✅ Qdrant is responding! $VERSION"
+                exit 0
+              fi
+            fi
+            
+            if [ $i -eq 60 ]; then
+              echo "❌ Qdrant API not ready after 120s"
+              echo ""
+              echo "=== Debug Info ==="
+              echo "Container:"
+              docker ps -a | grep qdrant
+              echo ""
+              echo "Port:"
+              ss -tulpn | grep 6333
+              echo ""
+              echo "Test curl:"
+              curl -v http://localhost:6333/ 2>&1 | head -20
               exit 1
             fi
-            [ $((i % 5)) -eq 0 ] && echo "⏳ Waiting for health check... (${i}/30)"
+            
+            [ $((i % 10)) -eq 0 ] && echo "⏳ Waiting for API... (${i}/60 = $((i*2))s)"
             sleep 2
           done
 
